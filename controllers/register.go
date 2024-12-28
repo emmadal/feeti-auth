@@ -3,10 +3,12 @@ package controllers
 import (
 	"context"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
+	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
 )
 
@@ -53,11 +55,19 @@ func Register(c *gin.Context) {
 		body.Pin = hashedPin
 
 		// Create user and wallet in a single transaction
-		code, user, err := body.CreateUserWithWallet()
+		code, user, wallet, err := body.CreateUserWithWallet()
 		if err != nil {
 			helpers.HandleError(c, code, err.Error(), err)
 			return
 		}
-		helpers.HandleSuccessData(c, "User registered successfully", user)
+		token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
+		if err != nil {
+			helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
+			return
+		}
+		helpers.HandleSuccessData(c, "User registered successfully", map[string]interface{}{
+			"data":  map[string]interface{}{"user": user, "wallet": wallet},
+			"token": token,
+		})
 	}
 }

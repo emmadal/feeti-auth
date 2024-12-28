@@ -1,6 +1,8 @@
 module github.com/emmadal/feeti-backend-user
 
-go 1.23.4
+go 1.22
+
+toolchain go1.23.4
 
 require (
 	github.com/emmadal/feeti-module v0.0.0-20241228125743-239921c04fb8

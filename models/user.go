@@ -52,7 +52,7 @@ func (user User) LockUser() error {
 }
 
 // CreateUserWithWallet creates both user and wallet in a single transaction
-func (user User) CreateUserWithWallet() (int, *models.User, error) {
+func (user User) CreateUserWithWallet() (int, *models.User, *models.Wallet, error) {
 	tx := DB.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -61,20 +61,21 @@ func (user User) CreateUserWithWallet() (int, *models.User, error) {
 	}()
 
 	var response models.User
+	var response_wallet models.Wallet
 
 	// Create user
 	if err := tx.Create(&user.User).Error; err != nil {
 		tx.Rollback()
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return http.StatusConflict, nil, errors.New("Account already exists")
+			return http.StatusConflict, nil, nil, errors.New("Account already exists")
 		}
-		return http.StatusInternalServerError, nil, errors.New("Failed to create user account")
+		return http.StatusInternalServerError, nil, nil, errors.New("Failed to create user account")
 	}
 
 	// Get created user
-	if err := tx.Select("id", "phone_number", "first_name", "last_name", "photo").First(&response, user.User.ID).Error; err != nil {
+	if err := tx.Select("id", "phone_number", "first_name", "last_name", "photo", "email", "device_token").First(&response, user.User.ID).Error; err != nil {
 		tx.Rollback()
-		return http.StatusInternalServerError, nil, errors.New("Failed to retrieve created user")
+		return http.StatusInternalServerError, nil, nil, errors.New("Failed to retrieve created user")
 	}
 
 	// Create wallet
@@ -82,17 +83,24 @@ func (user User) CreateUserWithWallet() (int, *models.User, error) {
 		UserID:   response.ID,
 		Currency: "XAF",
 	}
+
 	if err := tx.Create(&wallet).Error; err != nil {
 		tx.Rollback()
-		return http.StatusInternalServerError, nil, errors.New("Failed to create user wallet")
+		return http.StatusInternalServerError, nil, nil, errors.New("Failed to create user wallet")
+	}
+
+	// Get created wallet
+	if err := tx.Select("id", "user_id", "currency", "balance").First(&response_wallet, wallet.ID).Error; err != nil {
+		tx.Rollback()
+		return http.StatusInternalServerError, nil, nil, errors.New("Failed to retrieve created wallet")
 	}
 
 	// Commit transaction
 	if err := tx.Commit().Error; err != nil {
-		return http.StatusInternalServerError, nil, errors.New("Failed to complete user registration")
+		return http.StatusInternalServerError, nil, nil, errors.New("Failed to complete user registration")
 	}
 
-	return http.StatusCreated, &response, nil
+	return http.StatusCreated, &response, &response_wallet, nil
 }
 
 // GetUserByPhoneNumber find user by phone number
