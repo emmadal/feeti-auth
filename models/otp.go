@@ -2,34 +2,35 @@ package models
 
 import (
 	"errors"
-	"time"
+	"fmt"
 
+	"github.com/emmadal/feeti-module/models"
 	"gorm.io/gorm"
 )
 
+// OTP is a local type that embeds the non-local models.Otp type
 type OTP struct {
-	ID          uint      `json:"id" gorm:"primaryKey;unique"`
-	Code        string    `json:"code" gorm:"type:varchar(6)"`
-	IsUsed      bool      `json:"is_used" gorm:"type:boolean;not null;default:false"`
-	PhoneNumber string    `json:"phone_number" gorm:"type:varchar(14);not null" binding:"required,e164,min=11,max=14"`
-	KeyUID      string    `json:"key_uid" gorm:"type:varchar(100);not null"`
-	ExpiryAt    time.Time `json:"expiry_at"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	models.Otp
 }
 
-// CheckOTP is the struct for checking the OTP
+// CheckOTP is a local type that embeds the non-local models.CheckOtp type
 type CheckOTP struct {
-	Code        string    `json:"code" binding:"required,min=6,max=6,numeric"`
-	PhoneNumber string    `json:"phone_number" binding:"required,e164,min=11,max=14"`
-	KeyUID      string    `json:"key_uid" binding:"required,uuid"`
-	ExpiryAt    time.Time `json:"expiry_at"`
-	CreatedAt   time.Time `json:"created_at"`
+	models.CheckOtp
+}
+
+// ResetPin is a local type that embeds the non-local models.ResetPin type
+type ResetPin struct {
+	models.ResetPin
+}
+
+// UpdatePin is a local type that embeds the non-local models.UpdatePin type
+type UpdatePin struct {
+	models.UpdatePin
 }
 
 // GetUserByPhone get a user by phone number
-func (otp OTP) GetUserByPhone() (*User, error) {
-	var user User
+func (otp OTP) GetUserByPhone() (*models.User, error) {
+	var user models.User
 	err := DB.Select("id", "first_name", "last_name", "photo", "phone_number").
 		Where("phone_number = ? AND is_active = ?", otp.PhoneNumber, true).
 		First(&user).Error
@@ -41,46 +42,38 @@ func (otp OTP) GetUserByPhone() (*User, error) {
 }
 
 // InsertOTP insert a new OTP into the database
-func (otp OTP) InsertOTP(expirationTime time.Duration) error {
-	result := DB.Create(&OTP{
-		Code:        otp.Code,
-		PhoneNumber: otp.PhoneNumber,
-		KeyUID:      otp.KeyUID,
-		ExpiryAt:    time.Now().Add(time.Minute * expirationTime),
-	})
-
-	if result.Error != nil {
-		return errors.New("Unexpected error with OTP")
+func (otp OTP) InsertOTP() error {
+	err := DB.Create(&otp.Otp).Error
+	if err != nil {
+		return fmt.Errorf("Failed to create OTP")
 	}
 	return nil
 }
 
 // UpdateOTP update the OTP
-func (otp CheckOTP) UpdateOTP() error {
-	err := DB.Model(&OTP{}).Where("is_used = ?", false).Where("phone_number = ?", otp.PhoneNumber).Where("key_uid = ?", otp.KeyUID).Where("code = ?", otp.Code).Updates(
-		map[string]interface{}{
-			"updated_at": time.Now(),
-			"is_used":    true,
-		},
-	).Error
-	return err
+func (otp OTP) UpdateOTP() error {
+	err := DB.Model(&otp).Where("is_used = ? AND phone_number = ? AND key_uid = ? AND code = ?", false, otp.PhoneNumber, otp.KeyUID, otp.Code).Update("is_used", true).Error
+	if err != nil {
+		return fmt.Errorf("Failed to confirm OTP")
+	}
+	return nil
 }
 
-// GetOTP get the OTP by phone number and code
+// GetOTP find the OTP in the database
 func (ch CheckOTP) GetOTP() (*OTP, error) {
 	var otp OTP
-	err := DB.Select("is_used", "expiry_at").Where("phone_number = ? AND key_uid = ? AND code = ?", ch.PhoneNumber, ch.KeyUID, ch.Code).First(&otp).Error
+	err := DB.Select("expiry_at", "is_used", "code", "phone_number", "key_uid").Where("phone_number = ? AND key_uid = ? AND code = ?", ch.PhoneNumber, ch.KeyUID, ch.Code).First(&otp).Error
 
 	if err != nil {
-		return nil, errors.New("OTP not found")
+		return nil, errors.New("No OTP found")
 	}
 	return &otp, nil
 }
 
-// GetOTPByParams get the OTP  by phone number, code adn uuid
-func GetOTPByParams(key_uid, phone_number, code string) (*OTP, error) {
+// GetOTPByCodeAndUID find OTP by code and uid
+func GetOTPByCodeAndUID(phone, code, uid string) (*OTP, error) {
 	var otp OTP
-	err := DB.Select("expiry_at", "is_used", "code", "phone_number", "key_uid").Where("phone_number = ? AND key_uid = ? AND code = ?", phone_number, key_uid, code).First(&otp).Error
+	err := DB.Select("expiry_at", "is_used", "code", "phone_number", "key_uid").Where("phone_number = ? AND key_uid = ? AND code = ?", phone, uid, code).First(&otp).Error
 
 	if err != nil {
 		return nil, errors.New("No OTP found")

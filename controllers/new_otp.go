@@ -16,7 +16,7 @@ func NewOTP(c *gin.Context) {
 	var errChan = make(chan error, 1)
 
 	// Create a context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	// Validate the phone number
@@ -28,13 +28,14 @@ func NewOTP(c *gin.Context) {
 	// Generate OTP
 	otpCode := helpers.GenerateOTPCode(5)
 	body.KeyUID = uuid.NewString()
+	body.Code = otpCode
 
 	// Send OTP in a separate goroutine
 	go helpers.SendOTP(body.PhoneNumber, otpCode)
 
 	body.Code = otpCode
 	go func() {
-		if err := body.InsertOTP(5); err != nil {
+		if err := body.InsertOTP(); err != nil {
 			errChan <- err
 			close(errChan)
 			return
@@ -49,7 +50,6 @@ func NewOTP(c *gin.Context) {
 		helpers.HandleError(c, http.StatusInternalServerError, "OTP creation timed out", ctx.Err())
 		return
 	default:
-
 		helpers.HandleSuccessData(c, "OTP created successfully", body.KeyUID)
 		return
 	}

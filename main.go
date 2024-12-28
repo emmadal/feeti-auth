@@ -7,12 +7,10 @@ import (
 	"time"
 
 	"github.com/emmadal/feeti-backend-user/controllers"
-	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
 	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
-	"github.com/newrelic/go-agent/v3/integrations/nrgin"
 )
 
 func main() {
@@ -28,15 +26,8 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// New Relic
-	app, err := helpers.NewRelicConfig()
-	if err != nil {
-		log.Fatalln(err)
-	}
-
 	// Initialize Gin server
 	server := gin.Default()
-	server.Use(nrgin.Middleware(app))
 
 	// Database connection
 	models.DBConnect()

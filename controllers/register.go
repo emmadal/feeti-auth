@@ -14,10 +14,10 @@ import (
 func Register(c *gin.Context) {
 	var body models.User
 	var passwordChan = make(chan string, 1)
-	var errChan = make(chan error)
+	var errChan = make(chan error, 1)
 
 	// Create a context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	// Parse and validate request body
@@ -54,7 +54,11 @@ func Register(c *gin.Context) {
 		// Create user wallet
 		var wallet models.Wallet
 		wallet.UserID = user.ID
-		_ = wallet.CreateUserWallet()
+		err = wallet.CreateUserWallet()
+		if err != nil {
+			helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
+			return
+		}
 
 		// Return success response
 		helpers.HandleSuccess(c, "User registered successfully", nil)
