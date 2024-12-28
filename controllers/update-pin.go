@@ -20,12 +20,6 @@ func UpdatePin(c *gin.Context) {
 		return
 	}
 
-	// Validate new PIN format
-	if !validPinFormat(body.NewPin) {
-		helpers.HandleError(c, http.StatusBadRequest, "Invalid new PIN format: must be 4-6 digits", nil)
-		return
-	}
-
 	// Create channels with proper buffer sizes
 	errorChan := make(chan error, 2) // Buffer for both goroutines
 	userChan := make(chan models.User, 1)
@@ -129,7 +123,7 @@ func UpdatePin(c *gin.Context) {
 	// Begin transaction
 	tx := models.DB.Begin()
 	defer func() {
-		if r := recover(); r != nil {
+		if r := recover(); r != nil || ctx.Err() != nil {
 			tx.Rollback()
 		}
 	}()
@@ -164,17 +158,4 @@ func validateOTP(otp models.OTP, body models.UpdatePin) bool {
 		otp.PhoneNumber == body.PhoneNumber &&
 		time.Now().Before(otp.ExpiryAt) &&
 		otp.KeyUID == body.KeyUID
-}
-
-// isValidPinFormat validates the PIN format
-func validPinFormat(pin string) bool {
-	if len(pin) < 4 || len(pin) > 6 {
-		return false
-	}
-	for _, c := range pin {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
 }

@@ -51,28 +51,48 @@ func (user User) LockUser() error {
 	return nil
 }
 
-// CreateUser insert user data in database
-func (user User) CreateUser() (int, *models.User, error) {
+// CreateUserWithWallet creates both user and wallet in a single transaction
+func (user User) CreateUserWithWallet() (int, *models.User, error) {
+	tx := DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
 	var response models.User
-	result := DB.Create(&user.User).Select("id", "phone_number").First(&response)
-	if errors.Is(result.Error, gorm.ErrDuplicatedKey) {
-		return http.StatusConflict, nil, errors.New("Account already exist")
+
+	// Create user
+	if err := tx.Create(&user.User).Error; err != nil {
+		tx.Rollback()
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return http.StatusConflict, nil, errors.New("Account already exists")
+		}
+		return http.StatusInternalServerError, nil, errors.New("Failed to create user account")
 	}
 
-	if errors.Is(result.Error, gorm.ErrRegistered) {
-		return http.StatusInternalServerError, nil, errors.New("Unable to register user")
-	}
-	return 0, &user.User, nil
-}
-
-// CreateUser insert user data in database
-func (w *Wallet) CreateUserWallet() error {
-	err := DB.Create(&w).Error
-	if err != nil {
-		return errors.New("Failed to create user wallet")
+	// Get created user
+	if err := tx.Select("id", "phone_number", "first_name", "last_name", "photo").First(&response, user.User.ID).Error; err != nil {
+		tx.Rollback()
+		return http.StatusInternalServerError, nil, errors.New("Failed to retrieve created user")
 	}
 
-	return nil
+	// Create wallet
+	wallet := models.Wallet{
+		UserID:   response.ID,
+		Currency: "XAF",
+	}
+	if err := tx.Create(&wallet).Error; err != nil {
+		tx.Rollback()
+		return http.StatusInternalServerError, nil, errors.New("Failed to create user wallet")
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		return http.StatusInternalServerError, nil, errors.New("Failed to complete user registration")
+	}
+
+	return http.StatusCreated, &response, nil
 }
 
 // GetUserByPhoneNumber find user by phone number
@@ -86,4 +106,14 @@ func GetUserByPhoneNumber(phone string) (*models.User, error) {
 		return nil, errors.New("No user found")
 	}
 	return &user, nil
+}
+
+// GetWalletByUserID find wallet by user ID
+func GetWalletByUserID(userID uint) (*models.Wallet, error) {
+	var wallet models.Wallet
+	err := DB.Where("user_id = ?", userID).First(&wallet).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errors.New("No wallet found")
+	}
+	return &wallet, nil
 }
