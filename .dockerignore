@@ -1,0 +1,41 @@
+# Exclude the Go workspace directories
+/bin
+/pkg
+/build
+/cache
+
+# Ignore the compiled binary (if present in local)
+backenduser
+
+# Ignore common Go environment files
+*.exe
+*.out
+*.test
+*.yml
+
+# Node.js related (if there’s a frontend, or node_modules in the project)
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Exclude test and local configuration files
+*.env.*
+!.env # Keep the main .env file
+*.log
+*.tmp
+
+# Version control files
+.git
+.gitignore
+.gitattributes
+
+# Editor-specific files
+.vscode/
+.idea/
+.DS_Store
+.github/ # GitHub specific files
+.commitlnt/ # Commitlint configuration
+
+# Docker files
+Dockerfile*
+.dockerignore

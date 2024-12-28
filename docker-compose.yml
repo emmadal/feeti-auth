@@ -1,0 +1,36 @@
+version: '3.8'
+services:
+  backend:
+    image: emmadal/backend-user:${TAG}
+    container_name: backend-user
+    hostname: backend-user-{1..10}
+    env_file:
+      - .env
+    deploy:
+      replicas: 10
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 2
+        delay: 10s
+        order: start-first
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      endpoint_mode: vip
+    ports:
+      - target: 4000
+        published: 4000
+        protocol: tcp
+        mode: ingress
+    networks:
+      - backend-user-network
+
+networks:
+  backend-user-network:
+    driver: overlay
+    attachable: true
