@@ -3,65 +3,71 @@ package controllers
 import (
 	"context"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
+	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
 )
 
 // Register handles user registration
 func Register(c *gin.Context) {
 	var body models.User
-	var passwordChan = make(chan string, 1)
-	var errChan = make(chan error)
+	var hashedPinChan = make(chan string, 1)
+	var errChan = make(chan error, 1)
 
 	// Create a context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	defer close(hashedPinChan)
+	defer close(errChan)
 
-	// Parse and validate request body
+	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
 		helpers.HandleError(c, http.StatusBadRequest, "Invalid data or bad request", err)
 		return
 	}
 
-	// Hash user pin
+	// Hash user pin in goroutine
 	go func() {
 		hashedPin, err := helpers.HashPassword(body.Pin)
 		if err != nil {
 			errChan <- err
-			close(errChan)
 			return
 		}
-		passwordChan <- hashedPin
-		close(passwordChan)
+		select {
+		case hashedPinChan <- hashedPin:
+		case <-ctx.Done():
+		}
 	}()
 
+	// Wait for PIN hashing result
 	select {
 	case err := <-errChan:
-		// Handle error if hashing fails
-		helpers.HandleError(c, http.StatusInternalServerError, err.Error(), nil)
+		helpers.HandleError(c, http.StatusInternalServerError, "Failed to process PIN", err)
 		return
-	case password := <-passwordChan:
-		body.Pin = password
-		// Create user
-		code, user, err := body.CreateUser()
+	case <-ctx.Done():
+		helpers.HandleError(c, http.StatusRequestTimeout, "Request timeout", ctx.Err())
+		return
+	case hashedPin := <-hashedPinChan:
+		body.Pin = hashedPin
+
+		// Create user and wallet in a single transaction
+		code, user, wallet, err := body.CreateUserWithWallet()
 		if err != nil {
 			helpers.HandleError(c, code, err.Error(), err)
 			return
 		}
-		// Create user wallet
-		var wallet models.Wallet
-		wallet.UserID = user.ID
-		_ = wallet.CreateUserWallet()
-
-		// Return success response
-		helpers.HandleSuccess(c, "User registered successfully", nil)
-		return
-	case <-ctx.Done():
-		// Handle timeout if the context expires
-		helpers.HandleError(c, http.StatusRequestTimeout, "Register timeout", nil)
-		return
+		token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
+		if err != nil {
+			helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
+			return
+		}
+		helpers.HandleSuccessData(c, "User registered successfully", map[string]interface{}{
+			"data":  map[string]interface{}{"user": user, "wallet": wallet},
+			"token": token,
+		})
 	}
 }

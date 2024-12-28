@@ -7,6 +7,7 @@ import (
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
 	jwt "github.com/emmadal/feeti-module/jwt_module"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,7 +22,7 @@ func Login(c *gin.Context) {
 	}
 
 	// Check if the user exists
-	user, err := models.GetUserByPhone(body.PhoneNumber)
+	user, err := models.GetUserByPhoneNumber(body.PhoneNumber)
 	if err != nil {
 		helpers.HandleError(c, http.StatusNotFound, "Invalid phone number", err)
 		return
@@ -36,9 +37,10 @@ func Login(c *gin.Context) {
 
 	// Verify the user's pin
 	if ok := helpers.VerifyPassword(body.Pin, user.Pin); !ok {
+		// Convert to local User type
+		localUser := models.User{User: *user}
 		if user.Quota < 2 {
-			// Increment user quota
-			if err := user.UpdateUserQuota(); err != nil {
+			if err := localUser.UpdateUserQuota(); err != nil {
 				helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
 				return
 			}
@@ -46,7 +48,7 @@ func Login(c *gin.Context) {
 			return
 		} else {
 			// Lock user
-			if err := user.LockUser(); err != nil {
+			if err := localUser.LockUser(); err != nil {
 				helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
 				return
 			}
@@ -73,6 +75,7 @@ func Login(c *gin.Context) {
 			"last_name":    user.LastName,
 			"device_token": user.DeviceToken,
 			"photo":        user.Photo,
+			"email":        user.Email,
 		},
 	})
 }
