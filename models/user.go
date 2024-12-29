@@ -42,11 +42,32 @@ func (user User) UpdateUserQuota() error {
 	return nil
 }
 
-// LockUser locks a user
+// LockUser locks a user account
 func (user User) LockUser() error {
-	err := DB.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND quota = ?", user.PhoneNumber, true, user.Quota).Update("locked", true).Error
-	if err != nil {
+	tx := DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	if err := tx.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND quota = ?", user.PhoneNumber, true, 3).Update("locked", true).Error; err != nil {
+		tx.Rollback()
+		return errors.New("Failed to lock account due to an error")
+	}
+
+	if err := tx.Commit().Error; err != nil {
 		return errors.New("Failed to lock account")
+	}
+
+	return nil
+}
+
+// ResetUserQuota resets the user quota
+func (user User) ResetUserQuota() error {
+	err := DB.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND locked = ?", user.PhoneNumber, true, false).Update("quota", 0).Error
+	if err != nil {
+		return errors.New("Failed to reset login attempts")
 	}
 	return nil
 }
@@ -106,21 +127,21 @@ func (user User) CreateUserWithWallet() (int, *models.User, *models.Wallet, erro
 // GetUserByPhoneNumber find user by phone number
 func GetUserByPhoneNumber(phone string) (*models.User, error) {
 	var user models.User
-	err := DB.Select("id", "first_name", "last_name", "photo", "phone_number", "pin", "quota", "locked", "device_token").
+	err := DB.Select("id", "first_name", "last_name", "photo", "phone_number", "pin", "quota", "locked", "device_token", "email").
 		Where("phone_number = ? AND is_active = ?", phone, true).
 		First(&user).Error
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil {
 		return nil, errors.New("No user found")
 	}
 	return &user, nil
 }
 
 // GetWalletByUserID find wallet by user ID
-func GetWalletByUserID(userID uint) (*models.Wallet, error) {
+func GetWalletByUserID(userID int64) (*models.Wallet, error) {
 	var wallet models.Wallet
-	err := DB.Where("user_id = ?", userID).First(&wallet).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	err := DB.Select("id", "user_id", "currency", "balance").Where("user_id = ? AND is_active = ?", userID, true).First(&wallet).Error
+	if err != nil {
 		return nil, errors.New("No wallet found")
 	}
 	return &wallet, nil

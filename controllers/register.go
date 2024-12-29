@@ -8,6 +8,7 @@ import (
 
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
+	"github.com/emmadal/feeti-module/cache"
 	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
 )
@@ -60,13 +61,32 @@ func Register(c *gin.Context) {
 			helpers.HandleError(c, code, err.Error(), err)
 			return
 		}
+		// Generate JWT token
 		token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
 		if err != nil {
 			helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
 			return
 		}
+		// set user in cache
+		user.Pin = hashedPin
+		go cache.SetDataInCache(user.PhoneNumber, user, 0)
+		// Send success response
 		helpers.HandleSuccessData(c, "User registered successfully", map[string]interface{}{
-			"data":  map[string]interface{}{"user": user, "wallet": wallet},
+			"user": map[string]any{
+				"id":           user.ID,
+				"first_name":   user.FirstName,
+				"last_name":    user.LastName,
+				"email":        user.Email,
+				"phone_number": user.PhoneNumber,
+				"device_token": user.DeviceToken,
+				"photo":        user.Photo,
+			},
+			"wallet": map[string]any{
+				"id":       wallet.ID,
+				"user_id":  wallet.UserID,
+				"balance":  wallet.Balance,
+				"currency": wallet.Currency,
+			},
 			"token": token,
 		})
 	}

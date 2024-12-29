@@ -12,7 +12,7 @@ import (
 func SendOTP(phoneNumber string, otp string) {
 
 	payload := []byte(fmt.Sprintf(
-		`{"recipient": "%s", "sender_id": "%s", "type": "plain", "message": "Utilise le code %s pour te connecter à Maagot. Il Expire dans 5 minutes."}`, strings.Split(phoneNumber, "+")[1], os.Getenv("SMS_SENDER_ID"), otp))
+		`{"recipient": "%s", "sender_id": "%s", "type": "plain", "message": "Utilise le code %s pour te connecter à Feeti. Il Expire dans 2 minutes."}`, strings.Split(phoneNumber, "+")[1], os.Getenv("SMS_SENDER_ID"), otp))
 
 	req, err := http.NewRequest("POST", os.Getenv("SMS_API_URL"), bytes.NewBuffer(payload))
 	if err != nil {

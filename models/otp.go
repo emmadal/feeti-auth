@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/emmadal/feeti-module/models"
 	"gorm.io/gorm"
@@ -11,6 +12,11 @@ import (
 // OTP is a local type that embeds the non-local models.Otp type
 type OTP struct {
 	models.Otp
+}
+
+// NewOTP is a local type that embeds the non-local models.NewOtp type
+type NewOTP struct {
+	models.NewOtp
 }
 
 // CheckOTP is a local type that embeds the non-local models.CheckOtp type
@@ -43,6 +49,7 @@ func (otp OTP) GetUserByPhone() (*models.User, error) {
 
 // InsertOTP insert a new OTP into the database
 func (otp OTP) InsertOTP() error {
+	otp.ExpiryAt = time.Now().Add(2 * time.Minute)
 	err := DB.Create(&otp.Otp).Error
 	if err != nil {
 		return fmt.Errorf("Failed to create OTP")
