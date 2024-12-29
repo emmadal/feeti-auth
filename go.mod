@@ -12,7 +12,6 @@ require (
 	github.com/newrelic/go-agent/v3 v3.35.1
 	github.com/sirupsen/logrus v1.9.3
 	golang.org/x/crypto v0.31.0
-	golang.org/x/time v0.8.0
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gorm v1.25.12
 )
