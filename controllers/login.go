@@ -29,7 +29,7 @@ func Login(c *gin.Context) {
 			cachedUser.Locked = true
 			go cache.UpdateDataInCache(cachedUser.PhoneNumber, cachedUser, 0)
 			go cachedUser.LockUser()
-			helpers.HandleError(c, http.StatusUnauthorized, "Account locked due to reached login attempts", nil)
+			helpers.HandleError(c, http.StatusUnauthorized, "Account locked. Login attempts exceeded", nil)
 			return
 		}
 		// Verify PIN
@@ -50,7 +50,11 @@ func Login(c *gin.Context) {
 	}
 
 	// Cache the user for future requests
-	cache.SetDataInCache(user.PhoneNumber, user, 0)
+	err = cache.SetDataInCache(user.PhoneNumber, user, 0)
+	if err != nil {
+		helpers.HandleError(c, http.StatusInternalServerError, "Unexpected error", err)
+		return
+	}
 
 	// Create local user object to avoid circular reference
 	localUser := models.User{User: *user}
@@ -67,7 +71,7 @@ func Login(c *gin.Context) {
 
 // handleFailedLogin handles failed login
 func handleFailedLogin(c *gin.Context, user *models.User) {
-	if user.Quota < 3 {
+	if user.Quota >= 0 && user.Quota <= 3 {
 		if err := user.UpdateUserQuota(); err != nil {
 			helpers.HandleError(c, http.StatusInternalServerError, "Failed to update login attempts", err)
 			return
@@ -111,14 +115,23 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User) {
 				helpers.HandleError(c, http.StatusInternalServerError, "Failed to reset quota", err)
 			}
 			localUser.Quota = 0
-			cache.UpdateDataInCache(localUser.PhoneNumber, localUser, 0)
+			if err := cache.UpdateDataInCache(localUser.PhoneNumber, localUser, 0); err != nil {
+				helpers.HandleError(c, http.StatusInternalServerError, "Failed to update cache", err)
+			}
 		}(user)
+	}
+
+	// Get wallet
+	wallet, err := user.GetWalletByUserID()
+	if err != nil {
+		helpers.HandleError(c, http.StatusInternalServerError, "Failed to get wallet", err)
+		return
 	}
 
 	// Send success response
 	helpers.HandleSuccessData(c, "Login successful", map[string]interface{}{
 		"token": token,
-		"user": map[string]interface{}{
+		"user": gin.H{
 			"id":           user.ID,
 			"phone":        user.PhoneNumber,
 			"first_name":   user.FirstName,
@@ -126,6 +139,12 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User) {
 			"device_token": user.DeviceToken,
 			"photo":        user.Photo,
 			"email":        user.Email,
+		},
+		"wallet": gin.H{
+			"id":       wallet.ID,
+			"user_id":  wallet.UserID,
+			"currency": wallet.Currency,
+			"balance":  wallet.Balance,
 		},
 	})
 }

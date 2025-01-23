@@ -3,11 +3,11 @@ services:
   backend:
     image: emmadal/backend-user:${TAG}
     container_name: backend-user
-    hostname: backend-user-{1..10}
+    hostname: backend-user-{1..5}
     env_file:
       - .env
     deploy:
-      replicas: 10
+      replicas: 5
       restart_policy:
         condition: on-failure
       update_config:

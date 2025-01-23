@@ -2,6 +2,7 @@ package models
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/emmadal/feeti-module/models"
@@ -25,25 +26,6 @@ type UserLogin struct {
 
 // UpdateUserPin updates the pin of a user
 func (user User) UpdateUserPin() error {
-	err := DB.Model(&models.User{}).Where("phone_number = ? AND is_active = ?", user.PhoneNumber, true).Update("pin", user.Pin).Error
-
-	if err != nil {
-		return errors.New("Failed to update user pin")
-	}
-	return nil
-}
-
-// UpdateUserQuota updates the user data
-func (user User) UpdateUserQuota() error {
-	err := DB.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND locked = ?", user.PhoneNumber, true, false).Update("quota", gorm.Expr("quota + ?", 1)).Error
-	if err != nil {
-		return errors.New("Failed to update login attempts")
-	}
-	return nil
-}
-
-// LockUser locks a user account
-func (user User) LockUser() error {
 	tx := DB.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -51,24 +33,60 @@ func (user User) LockUser() error {
 		}
 	}()
 
-	if err := tx.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND quota = ?", user.PhoneNumber, true, 3).Update("locked", true).Error; err != nil {
+	err := tx.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND locked = ? AND quota = ?", user.PhoneNumber, true, false, 0).Update("pin", user.Pin).Error
+
+	if err != nil {
 		tx.Rollback()
-		return errors.New("Failed to lock account due to an error")
+		return fmt.Errorf("Failed to update user pin")
 	}
 
 	if err := tx.Commit().Error; err != nil {
-		return errors.New("Failed to lock account")
+		return fmt.Errorf("Failed to commit transaction")
 	}
+	return nil
+}
 
+// UpdateUserQuota updates the user data
+func (user User) UpdateUserQuota() error {
+	DB.Transaction(func(tx *gorm.DB) error {
+		err := tx.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND locked = ? AND quota < ?", user.PhoneNumber, true, false, 3).Update("quota", gorm.Expr("quota + ?", 1)).Error
+		if err != nil {
+			// return any error will rollback
+			return fmt.Errorf("Failed to update quota")
+		}
+		return nil
+	})
+	return nil
+}
+
+// LockUser locks a user account
+func (user User) LockUser() error {
+	DB.Transaction(func(tx *gorm.DB) error {
+		err := tx.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND quota = ?", user.PhoneNumber, true, 3).Update("locked", true).Error
+
+		if err != nil {
+			// return any error will rollback
+			return fmt.Errorf("Failed to lock account")
+		}
+		// return nil will commit the whole transaction
+		return nil
+	})
 	return nil
 }
 
 // ResetUserQuota resets the user quota
 func (user User) ResetUserQuota() error {
-	err := DB.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND locked = ?", user.PhoneNumber, true, false).Update("quota", 0).Error
-	if err != nil {
-		return errors.New("Failed to reset login attempts")
-	}
+	DB.Transaction(func(tx *gorm.DB) error {
+		err := tx.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND locked = ?", user.PhoneNumber, true, false).Update("quota", 0).Error
+
+		if err != nil {
+			// return any error will rollback
+			return fmt.Errorf("Failed to reset login attempts")
+		}
+
+		// return nil will commit the whole transaction
+		return nil
+	})
 	return nil
 }
 
@@ -88,15 +106,15 @@ func (user User) CreateUserWithWallet() (int, *models.User, *models.Wallet, erro
 	if err := tx.Create(&user.User).Error; err != nil {
 		tx.Rollback()
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return http.StatusConflict, nil, nil, errors.New("Account already exists")
+			return http.StatusConflict, nil, nil, fmt.Errorf("Account already exists")
 		}
-		return http.StatusInternalServerError, nil, nil, errors.New("Failed to create user account")
+		return http.StatusInternalServerError, nil, nil, fmt.Errorf("Failed to create user account")
 	}
 
 	// Get created user
 	if err := tx.Select("id", "phone_number", "first_name", "last_name", "photo", "email", "device_token").First(&response, user.User.ID).Error; err != nil {
 		tx.Rollback()
-		return http.StatusInternalServerError, nil, nil, errors.New("Failed to retrieve created user")
+		return http.StatusInternalServerError, nil, nil, fmt.Errorf("Failed to retrieve created user")
 	}
 
 	// Create wallet
@@ -107,18 +125,18 @@ func (user User) CreateUserWithWallet() (int, *models.User, *models.Wallet, erro
 
 	if err := tx.Create(&wallet).Error; err != nil {
 		tx.Rollback()
-		return http.StatusInternalServerError, nil, nil, errors.New("Failed to create user wallet")
+		return http.StatusInternalServerError, nil, nil, fmt.Errorf("Failed to create user wallet")
 	}
 
 	// Get created wallet
 	if err := tx.Select("id", "user_id", "currency", "balance").First(&response_wallet, wallet.ID).Error; err != nil {
 		tx.Rollback()
-		return http.StatusInternalServerError, nil, nil, errors.New("Failed to retrieve created wallet")
+		return http.StatusInternalServerError, nil, nil, fmt.Errorf("Failed to retrieve created wallet")
 	}
 
 	// Commit transaction
 	if err := tx.Commit().Error; err != nil {
-		return http.StatusInternalServerError, nil, nil, errors.New("Failed to complete user registration")
+		return http.StatusInternalServerError, nil, nil, fmt.Errorf("Failed to complete user registration")
 	}
 
 	return http.StatusCreated, &response, &response_wallet, nil
@@ -132,17 +150,17 @@ func GetUserByPhoneNumber(phone string) (*models.User, error) {
 		First(&user).Error
 
 	if err != nil {
-		return nil, errors.New("No user found")
+		return nil, fmt.Errorf("No user found")
 	}
 	return &user, nil
 }
 
 // GetWalletByUserID find wallet by user ID
-func GetWalletByUserID(userID int64) (*models.Wallet, error) {
+func (user User) GetWalletByUserID() (*models.Wallet, error) {
 	var wallet models.Wallet
-	err := DB.Select("id", "user_id", "currency", "balance").Where("user_id = ? AND is_active = ?", userID, true).First(&wallet).Error
+	err := DB.Select("id", "user_id", "currency", "balance").Where("user_id = ? AND is_active = ?", user.ID, true).First(&wallet).Error
 	if err != nil {
-		return nil, errors.New("No wallet found")
+		return nil, fmt.Errorf("No wallet found")
 	}
 	return &wallet, nil
 }

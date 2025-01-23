@@ -14,14 +14,14 @@ func CheckOTP(c *gin.Context) {
 	var body models.CheckOTP
 	var errChan = make(chan error, 1)
 	var otpChan = make(chan models.OTP, 1)
-
+	
 	// Create a context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// bind the request body to the struct
 	if err := c.ShouldBindJSON(&body); err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "Bad request or invalid data", err)
+		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
 		return
 	}
 

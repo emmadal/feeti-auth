@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -15,24 +16,26 @@ import (
 
 // Register handles user registration
 func Register(c *gin.Context) {
-	var body models.User
-	var hashedPinChan = make(chan string, 1)
-	var errChan = make(chan error, 1)
+	var (
+		body          models.User
+		hashedPinChan = make(chan string, 1)
+		errChan       = make(chan error, 1)
+	)
 
 	// Create a context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	defer close(hashedPinChan)
-	defer close(errChan)
 
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "Invalid data or bad request", err)
+		helpers.HandleError(c, http.StatusBadRequest, "bad request", err)
 		return
 	}
 
-	// Hash user pin in goroutine
+	// Goroutine to hash the user's PIN
 	go func() {
+		defer close(hashedPinChan)
+		defer close(errChan)
 		hashedPin, err := helpers.HashPassword(body.Pin)
 		if err != nil {
 			errChan <- err
@@ -41,10 +44,13 @@ func Register(c *gin.Context) {
 		select {
 		case hashedPinChan <- hashedPin:
 		case <-ctx.Done():
+			// Context timeout occurred, stop processing
+			helpers.HandleError(c, http.StatusRequestTimeout, "Request timeout", ctx.Err())
+			return
 		}
 	}()
 
-	// Wait for PIN hashing result
+	// Wait for either PIN hashing result or an error
 	select {
 	case err := <-errChan:
 		helpers.HandleError(c, http.StatusInternalServerError, "Failed to process PIN", err)
@@ -54,40 +60,46 @@ func Register(c *gin.Context) {
 		return
 	case hashedPin := <-hashedPinChan:
 		body.Pin = hashedPin
-
-		// Create user and wallet in a single transaction
-		code, user, wallet, err := body.CreateUserWithWallet()
-		if err != nil {
-			helpers.HandleError(c, code, err.Error(), err)
-			return
-		}
-		// Generate JWT token
-		token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
-		if err != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
-			return
-		}
-		// set user in cache
-		user.Pin = hashedPin
-		go cache.SetDataInCache(user.PhoneNumber, user, 0)
-		// Send success response
-		helpers.HandleSuccessData(c, "User registered successfully", map[string]interface{}{
-			"user": map[string]any{
-				"id":           user.ID,
-				"first_name":   user.FirstName,
-				"last_name":    user.LastName,
-				"email":        user.Email,
-				"phone_number": user.PhoneNumber,
-				"device_token": user.DeviceToken,
-				"photo":        user.Photo,
-			},
-			"wallet": map[string]any{
-				"id":       wallet.ID,
-				"user_id":  wallet.UserID,
-				"balance":  wallet.Balance,
-				"currency": wallet.Currency,
-			},
-			"token": token,
-		})
 	}
+
+	// Attempt to create user and wallet in a transaction
+	code, user, wallet, err := body.CreateUserWithWallet()
+	if err != nil {
+		helpers.HandleError(c, code, err.Error(), err)
+		return
+	}
+
+	// Generate JWT token
+	token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
+	if err != nil {
+		helpers.HandleError(c, http.StatusInternalServerError, "Failed to generate token", err)
+		return
+	}
+
+	// Store user data in the cache asynchronously
+	go func() {
+		if cacheErr := cache.SetDataInCache(user.PhoneNumber, user, 0); cacheErr != nil {
+			log.Printf("Failed to cache user data: %v", cacheErr)
+		}
+	}()
+
+	// Send success response
+	helpers.HandleSuccessData(c, "User registered successfully", gin.H{
+		"user": gin.H{
+			"id":           user.ID,
+			"first_name":   user.FirstName,
+			"last_name":    user.LastName,
+			"email":        user.Email,
+			"phone_number": user.PhoneNumber,
+			"device_token": user.DeviceToken,
+			"photo":        user.Photo,
+		},
+		"wallet": gin.H{
+			"id":       wallet.ID,
+			"user_id":  wallet.UserID,
+			"balance":  wallet.Balance,
+			"currency": wallet.Currency,
+		},
+		"token": token,
+	})
 }

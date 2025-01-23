@@ -15,7 +15,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.22
+          go-version: 1.23
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
@@ -39,6 +39,7 @@ jobs:
         run: |
           docker buildx build \
             --build-arg JWT_KEY="${{ secrets.JWT_KEY }}" \
+            --build-arg PORT="${{ secrets.PORT }}" \
             --build-arg SMS_JWT="${{ secrets.SMS_JWT }}" \
             --build-arg SMS_API_URL="${{ secrets.SMS_API_URL }}" \
             --build-arg SMS_SENDER_ID="${{ secrets.SMS_SENDER_ID }}" \
@@ -46,18 +47,15 @@ jobs:
             --build-arg DB_USER="${{ secrets.DB_USER }}" \
             --build-arg DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
             --build-arg DB_NAME="${{ secrets.DB_NAME }}" \
-            --build-arg DB_PORT="5432" \
+            --build-arg DB_PORT="${{ secrets.DB_PORT }}" \
             --build-arg GIN_MODE="release" \
-            --build-arg RELIC_LICENSE_KEY="${{ secrets.RELIC_LICENSE_KEY }}" \
-            --build-arg RELIC_APP_NAME="backend-user" \
-            --build-arg RELIC_USER_KEY="${{ secrets.RELIC_USER_KEY }}" \
             -t ${{ secrets.DOCKER_USERNAME }}/backend-user:${{ env.new_tag }} .
           docker push ${{ secrets.DOCKER_USERNAME }}/backend-user:${{ env.new_tag }}
   
 
       - name: Deploy to VPS
         env:
-          PORT: "4000"
+          PORT: ${{ secrets.PORT }}
           JWT_KEY: ${{ secrets.JWT_KEY }}
           SMS_JWT: ${{ secrets.SMS_JWT }}
           SMS_API_URL: ${{ secrets.SMS_API_URL }}
@@ -66,13 +64,13 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_NAME: ${{ secrets.DB_NAME }}
+          DB_PORT: ${{ secrets.DB_PORT }}
           GIN_MODE: "release"
           new_tag: ${{ env.new_tag }}
           TAG: ${{ env.new_tag }}
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             cd /var/backend-user
-            sudo apt-get update && sudo apt-get install -y
             docker service rm backend || true
             TAG=${{ env.new_tag }} docker stack deploy --compose-file docker-compose.yml backend-user
           EOF

@@ -38,9 +38,9 @@ func main() {
 	// initialize server
 	s := &http.Server{
 		Handler:      server,
-		Addr:         ":4000",
-		WriteTimeout: 15 * time.Second,
-		ReadTimeout:  15 * time.Second,
+		Addr:         os.Getenv("PORT"),
+		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  10 * time.Second,
 	}
 
 	// v1 routes
@@ -52,6 +52,6 @@ func main() {
 	v1.PUT("/update-pin", jwt.AuthAuthorization([]byte(os.Getenv("JWT_KEY"))), controllers.UpdatePin)
 
 	// start server
-	log.Println("Server is running on port", ":4000")
+	log.Printf("Server is running on port %s", os.Getenv("PORT"))
 	log.Fatalln(s.ListenAndServe())
 }

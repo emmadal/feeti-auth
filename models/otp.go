@@ -49,20 +49,32 @@ func (otp OTP) GetUserByPhone() (*models.User, error) {
 
 // InsertOTP insert a new OTP into the database
 func (otp OTP) InsertOTP() error {
-	otp.ExpiryAt = time.Now().Add(2 * time.Minute)
-	err := DB.Create(&otp.Otp).Error
-	if err != nil {
-		return fmt.Errorf("Failed to create OTP")
-	}
+	DB.Transaction(func(tx *gorm.DB) error {
+		// do some database operations in the transaction (use 'tx' from this point)
+		otp.ExpiryAt = time.Now().Add(2 * time.Minute)
+		if err := tx.Create(&otp.Otp).Error; err != nil {
+			// return any error will rollback
+			return fmt.Errorf("Failed to create OTP")
+		}
+		// return nil will commit the whole transaction
+		return nil
+	})
 	return nil
 }
 
 // UpdateOTP update the OTP
 func (otp OTP) UpdateOTP() error {
-	err := DB.Model(&otp).Where("is_used = ? AND phone_number = ? AND key_uid = ? AND code = ?", false, otp.PhoneNumber, otp.KeyUID, otp.Code).Update("is_used", true).Error
-	if err != nil {
-		return fmt.Errorf("Failed to confirm OTP")
-	}
+	DB.Transaction(func(tx *gorm.DB) error {
+		// do some database operations in the transaction
+		err := tx.Model(&otp).Where("is_used = ? AND phone_number = ? AND key_uid = ? AND code = ?", false, otp.PhoneNumber, otp.KeyUID, otp.Code).Update("is_used", true).Error
+
+		if err != nil {
+			// return any error will rollback
+			return fmt.Errorf("Failed to confirm OTP")
+		}
+		// return nil will commit the whole transaction
+		return nil
+	})
 	return nil
 }
 
@@ -72,7 +84,7 @@ func (ch CheckOTP) GetOTP() (*OTP, error) {
 	err := DB.Select("expiry_at", "is_used", "code", "phone_number", "key_uid").Where("phone_number = ? AND key_uid = ? AND code = ?", ch.PhoneNumber, ch.KeyUID, ch.Code).First(&otp).Error
 
 	if err != nil {
-		return nil, errors.New("No OTP found")
+		return nil, fmt.Errorf("No OTP found")
 	}
 	return &otp, nil
 }
@@ -83,7 +95,7 @@ func GetOTPByCodeAndUID(phone, code, uid string) (*OTP, error) {
 	err := DB.Select("expiry_at", "is_used", "code", "phone_number", "key_uid").Where("phone_number = ? AND key_uid = ? AND code = ?", phone, uid, code).First(&otp).Error
 
 	if err != nil {
-		return nil, errors.New("No OTP found")
+		return nil, fmt.Errorf("No OTP found")
 	}
 	return &otp, nil
 }
