@@ -15,6 +15,14 @@ import (
 func Login(c *gin.Context) {
 	var body models.UserLogin
 
+	// recover from panic
+	defer func() {
+		if r := recover(); r != nil {
+			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
+			return
+		}
+	}()
+
 	// Bind the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
 		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
@@ -23,36 +31,27 @@ func Login(c *gin.Context) {
 
 	// Try to get user from cache first
 	cachedUser, err := cache.GetDataFromCache[models.User](body.PhoneNumber)
+
 	if err == nil {
 		// If user found in cache
-		if cachedUser.Locked || cachedUser.Quota >= 3 {
-			cachedUser.Locked = true
-			go cache.UpdateDataInCache(cachedUser.PhoneNumber, cachedUser, 0)
-			go cachedUser.LockUser()
+		if cachedUser.Locked && cachedUser.Quota >= 3 {
 			helpers.HandleError(c, http.StatusUnauthorized, "Account locked. Login attempts exceeded", nil)
 			return
-		}
-		// Verify PIN
-		if ok := helpers.VerifyPassword(body.Pin, cachedUser.Pin); !ok {
-			handleFailedLogin(c, &cachedUser)
-			return
+		} else {
+			// Verify PIN
+			if ok := helpers.VerifyPassword(body.Pin, cachedUser.Pin); !ok {
+				handleFailedLogin(c, &cachedUser)
+				return
+			}
 		}
 		// send success response
 		handleSuccessfulLogin(c, &cachedUser)
 		return
 	}
-
 	// Get user from database
 	user, err := models.GetUserByPhoneNumber(body.PhoneNumber)
 	if err != nil {
-		helpers.HandleError(c, http.StatusNotFound, "Invalid phone number", err)
-		return
-	}
-
-	// Cache the user for future requests
-	err = cache.SetDataInCache(user.PhoneNumber, user, 0)
-	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Unexpected error", err)
+		helpers.HandleError(c, http.StatusNotFound, err.Error(), err)
 		return
 	}
 
@@ -71,29 +70,40 @@ func Login(c *gin.Context) {
 
 // handleFailedLogin handles failed login
 func handleFailedLogin(c *gin.Context, user *models.User) {
-	if user.Quota >= 0 && user.Quota <= 3 {
+	// Update login attempts in database and cache
+	if user.Quota >= 0 && user.Quota < 3 {
 		if err := user.UpdateUserQuota(); err != nil {
 			helpers.HandleError(c, http.StatusInternalServerError, "Failed to update login attempts", err)
-			return
 		}
 		user.Quota++
 		go cache.UpdateDataInCache(user.PhoneNumber, user, 0)
-		helpers.HandleError(c, http.StatusUnauthorized, "Invalid credentials", nil)
+		helpers.HandleError(c, http.StatusUnauthorized, "Invalid credentials,", nil)
 		return
 	}
 
 	// Lock account if quota exceeded
-	user.Locked = true
-	if err := user.LockUser(); err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", err)
+	if user.Quota >= 3 && !user.Locked {
+		if err := user.LockUser(); err != nil {
+			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", err)
+			return
+		}
+
+		// Send SMS to user account locked and update cache
+		user.Locked = true
+		go cache.UpdateDataInCache(user.PhoneNumber, user, 0)
+		go helpers.SmsAccountLocked(user.PhoneNumber)
+
+		helpers.HandleError(c, http.StatusUnauthorized, "Account locked", nil)
 		return
 	}
 
-	// Update user in cache after locking
-	go cache.UpdateDataInCache(user.PhoneNumber, user, 0)
-	go helpers.SmsAccountLocked(user.PhoneNumber)
+	// Check if account is locked and quota is exceeded
+	if user.Locked && user.Quota >= 3 {
+		helpers.HandleError(c, http.StatusUnauthorized, "Your feeti account is locked. Please contact the helpdesk", nil)
+		return
+	}
 
-	helpers.HandleError(c, http.StatusUnauthorized, "Account locked", nil)
+	helpers.HandleError(c, http.StatusUnauthorized, "Invalid credentials", nil)
 	return
 }
 
@@ -108,17 +118,18 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User) {
 
 	// Reset quota asynchronously if needed
 	if user.Quota > 0 {
-		go func(u *models.User) {
-			localUser := models.User{User: *&u.User}
-			if err := localUser.ResetUserQuota(); err != nil {
+		go func() {
+			if err := user.ResetUserQuota(); err != nil {
 				// Log error but don't fail the request
 				helpers.HandleError(c, http.StatusInternalServerError, "Failed to reset quota", err)
+				return
 			}
-			localUser.Quota = 0
-			if err := cache.UpdateDataInCache(localUser.PhoneNumber, localUser, 0); err != nil {
+			user.Quota = 0
+			if err := cache.UpdateDataInCache(user.PhoneNumber, user, 0); err != nil {
 				helpers.HandleError(c, http.StatusInternalServerError, "Failed to update cache", err)
+				return
 			}
-		}(user)
+		}()
 	}
 
 	// Get wallet
@@ -127,6 +138,9 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User) {
 		helpers.HandleError(c, http.StatusInternalServerError, "Failed to get wallet", err)
 		return
 	}
+
+	// Cache the user for future requests
+	go cache.SetDataInCache(user.PhoneNumber, user, 0)
 
 	// Send success response
 	helpers.HandleSuccessData(c, "Login successful", map[string]interface{}{
@@ -142,7 +156,6 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User) {
 		},
 		"wallet": gin.H{
 			"id":       wallet.ID,
-			"user_id":  wallet.UserID,
 			"currency": wallet.Currency,
 			"balance":  wallet.Balance,
 		},

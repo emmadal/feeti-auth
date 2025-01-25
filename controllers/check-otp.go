@@ -14,7 +14,15 @@ func CheckOTP(c *gin.Context) {
 	var body models.CheckOTP
 	var errChan = make(chan error, 1)
 	var otpChan = make(chan models.OTP, 1)
-	
+
+	// recover from panic
+	defer func() {
+		if r := recover(); r != nil {
+			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
+			return
+		}
+	}()
+
 	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -36,11 +44,14 @@ func CheckOTP(c *gin.Context) {
 		otp, err := body.GetOTP()
 		if err != nil {
 			errChan <- err
-			close(errChan)
 			return
 		}
 		otpChan <- *otp
+	}()
+
+	defer func() {
 		close(otpChan)
+		close(errChan)
 	}()
 
 	select {

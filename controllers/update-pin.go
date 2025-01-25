@@ -1,9 +1,147 @@
+// package controllers
+
+// import (
+// 	"context"
+// 	"fmt"
+// 	"net/http"
+// 	"sync"
+// 	"time"
+
+// 	"github.com/emmadal/feeti-backend-user/helpers"
+// 	"github.com/emmadal/feeti-backend-user/models"
+// 	"github.com/emmadal/feeti-module/cache"
+// 	"github.com/gin-gonic/gin"
+// )
+
+// // handleGoroutineErrors collects errors from a channel and returns the first one received.
+// func handleGoroutineErrors(ctx context.Context, errorChan <-chan error) (error, int) {
+// 	select {
+// 	case err := <-errorChan:
+// 		return err, http.StatusUnauthorized
+// 	case <-ctx.Done():
+// 		return fmt.Errorf("Request timed out"), http.StatusRequestTimeout
+// 	}
+// }
+
+// // fetchUser fetches a user based on the phone number and performs basic validations.
+// func fetchUser(ctx context.Context, phoneNumber string, errorChan chan<- error, userChan chan<- *models.User, wg *sync.WaitGroup) {
+// 	defer wg.Done()
+// 	select {
+// 	case <-ctx.Done():
+// 		errorChan <- ctx.Err()
+// 		return
+// 	default:
+// 		user, err := models.GetUserByPhoneNumber(phoneNumber)
+// 		if err != nil {
+// 			errorChan <- err
+// 			return
+// 		}
+// 		if user.Locked || user.Quota >= 3 {
+// 			errorChan <- fmt.Errorf("Feeti account is locked")
+// 			return
+// 		}
+// 		userChan <- &models.User{User: *user}
+// 	}
+// }
+
+// // fetchOTP validates the OTP details asynchronously.
+// func fetchOTP(ctx context.Context, body models.UpdatePin, errorChan chan<- error, wg *sync.WaitGroup) {
+// 	defer wg.Done()
+// 	select {
+// 	case <-ctx.Done():
+// 		errorChan <- ctx.Err()
+// 		return
+// 	default:
+// 		otp, err := models.GetOTPByCodeAndUID(body.PhoneNumber, body.CodeOTP, body.KeyUID)
+// 		if err != nil || otp.IsUsed || time.Now().After(otp.ExpiryAt) {
+// 			errorChan <- fmt.Errorf("Invalid or expired OTP")
+// 			return
+// 		}
+// 		if otp.KeyUID != body.KeyUID || otp.Code != body.CodeOTP || otp.PhoneNumber != body.PhoneNumber {
+// 			errorChan <- fmt.Errorf("Invalid OTP")
+// 			return
+// 		}
+// 	}
+// }
+
+// func UpdatePin(c *gin.Context) {
+// 	// recover from panic to avoid server crash
+// 	defer func() {
+// 		if r := recover(); r != nil {
+// 			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
+// 		}
+// 	}()
+
+// 	// body request
+// 	var body models.UpdatePin
+// 	var wg sync.WaitGroup // WaitGroup to wait for goroutines
+
+// 	// Channels for error and user
+// 	errorChan := make(chan error, 1)
+// 	userChan := make(chan *models.User, 1)
+
+// 	// Validate request body
+// 	if err := c.ShouldBindJSON(&body); err != nil {
+// 		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
+// 		return
+// 	}
+
+// 	// Context with timeout
+// 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+// 	defer func() {
+// 		cancel()
+// 		close(errorChan)
+// 		close(userChan)
+// 	}()
+
+// 	// Fetch user and OTP concurrently
+// 	wg.Add(2)
+// 	go fetchUser(ctx, body.PhoneNumber, errorChan, userChan, &wg)
+// 	go fetchOTP(ctx, body, errorChan, &wg)
+
+// 	// Handle error or timeout
+// 	err, statusCode := handleGoroutineErrors(ctx, errorChan)
+// 	if err != nil {
+// 		helpers.HandleError(c, statusCode, err.Error(), err)
+// 		return
+// 	}
+
+// 	// Get user result
+// 	user := <-userChan
+
+// 	// Verify old PIN
+// 	if !helpers.VerifyPassword(user.Pin, body.OldPin) {
+// 		helpers.HandleError(c, http.StatusUnauthorized, "Old PIN is incorrect", nil)
+// 		return
+// 	}
+
+// 	// Hash new PIN
+// 	hashPin, err := helpers.HashPassword(body.NewPin)
+// 	if err != nil {
+// 		helpers.HandleError(c, http.StatusInternalServerError, "Failed to process PIN", err)
+// 		return
+// 	}
+
+// 	// Update user PIN
+// 	user.Pin = hashPin
+// 	if err := user.UpdateUserPin(); err != nil {
+// 		helpers.HandleError(c, http.StatusInternalServerError, "Failed to update PIN", err)
+// 		return
+// 	}
+
+// 	// Update cache asynchronously
+// 	go cache.UpdateDataInCache(user.PhoneNumber, user, 0)
+
+//		// Send response
+//		helpers.HandleSuccess(c, "PIN updated successfully", nil)
+//	}
 package controllers
 
 import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
@@ -12,161 +150,131 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// fetchUserWithValidation fetches and validates the user.
+func fetchUserWithValidation(ctx context.Context, wg *sync.WaitGroup, phoneNumber string, errorChan chan<- error, userChan chan<- *models.User) {
+	defer wg.Done()
+
+	select {
+	case <-ctx.Done():
+		errorChan <- ctx.Err()
+		return
+	default:
+		user, err := models.GetUserByPhoneNumber(phoneNumber)
+		if err != nil {
+			errorChan <- err
+			return
+		}
+		if user.Locked || user.Quota >= 3 {
+			errorChan <- fmt.Errorf("Feeti account is locked")
+			return
+		}
+		userChan <- &models.User{User: *user}
+	}
+}
+
+// fetchOTPWithValidation fetches and validates the OTP.
+func fetchOTPWithValidation(ctx context.Context, wg *sync.WaitGroup, body models.UpdatePin, errorChan chan<- error, otpChan chan<- models.OTP) {
+	defer wg.Done()
+
+	select {
+	case <-ctx.Done():
+		errorChan <- ctx.Err()
+		return
+	default:
+		otp, err := models.GetOTPByCodeAndUID(body.PhoneNumber, body.CodeOTP, body.KeyUID)
+		if err != nil || otp.IsUsed || time.Now().After(otp.ExpiryAt) {
+			errorChan <- fmt.Errorf("Invalid or expired OTP")
+			return
+		}
+		if otp.KeyUID != body.KeyUID || otp.Code != body.CodeOTP || otp.PhoneNumber != body.PhoneNumber {
+			errorChan <- fmt.Errorf("Invalid OTP")
+			return
+		}
+		otpChan <- *otp
+	}
+}
+
 func UpdatePin(c *gin.Context) {
+	// recover from panic to avoid server crash
+	defer func() {
+		if r := recover(); r != nil {
+			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
+		}
+	}()
+
 	var body models.UpdatePin
 
-	// Create a context with timeout
+	if err := c.ShouldBindJSON(&body); err != nil {
+		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Check request size
-	if c.Request.ContentLength > (1024 * 1024) {
-		helpers.HandleError(c, http.StatusRequestEntityTooLarge, "Request too large", nil)
-		return
-	}
-
-	// Validate the request body
-	if err := c.ShouldBindJSON(&body); err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "Invalid data or bad request", err)
-		return
-	}
-
-	// Create a single error channel and result channels
-	errorChan := make(chan error, 1)
+	errorChan := make(chan error, 2)
 	userChan := make(chan *models.User, 1)
-	otpChan := make(chan *models.OTP, 1)
+	otpChan := make(chan models.OTP, 1)
 
-	// Cleanup function to close channels
-	defer func() {
+	var wg sync.WaitGroup
+
+	// Fetch user and OTP concurrently
+	wg.Add(2)
+	go fetchUserWithValidation(ctx, &wg, body.PhoneNumber, errorChan, userChan)
+	go fetchOTPWithValidation(ctx, &wg, body, errorChan, otpChan)
+
+	// Wait for both goroutines to complete
+	go func() {
+		wg.Wait()
 		close(errorChan)
 		close(userChan)
 		close(otpChan)
 	}()
 
-	// Fetch user with goroutine
-	go func() {
-		user, err := models.GetUserByPhoneNumber(body.PhoneNumber)
-		if err != nil {
-			select {
-			case errorChan <- err:
-			case <-ctx.Done():
-			}
-			return
-		}
-		if !user.IsActive || user.Locked || user.Quota >= 3 {
-			select {
-			case errorChan <- fmt.Errorf("user is inactive or locked"):
-			case <-ctx.Done():
-			}
-			return
-		}
-		select {
-		case userChan <- &models.User{User: *user}:
-		case <-ctx.Done():
-		}
-	}()
-
-	// Fetch OTP with goroutine
-	go func() {
-		otp, err := models.GetOTPByCodeAndUID(body.PhoneNumber, body.CodeOTP, body.KeyUID)
-		if err != nil {
-			select {
-			case errorChan <- err:
-			case <-ctx.Done():
-			}
-			return
-		}
-		if !time.Now().Before(otp.ExpiryAt) {
-			select {
-			case errorChan <- fmt.Errorf("OTP has expired"):
-			case <-ctx.Done():
-			}
-			return
-		}
-		if otp.IsUsed {
-			select {
-			case errorChan <- fmt.Errorf("OTP already used"):
-			case <-ctx.Done():
-			}
-			return
-		}
-		select {
-		case otpChan <- otp:
-		case <-ctx.Done():
-		}
-	}()
-
-	// Wait for results using select
-	var user *models.User
-	var otp *models.OTP
-
-	// First result
 	select {
 	case err := <-errorChan:
-		switch {
-		case err.Error() == "user is inactive or locked":
+		if err != nil {
 			helpers.HandleError(c, http.StatusUnauthorized, err.Error(), err)
-		case err.Error() == "OTP has expired":
-			helpers.HandleError(c, http.StatusUnauthorized, err.Error(), err)
-		case err.Error() == "OTP already used":
-			helpers.HandleError(c, http.StatusUnauthorized, err.Error(), err)
-		default:
-			helpers.HandleError(c, http.StatusInternalServerError, "Failed to process request", err)
+			return
 		}
-		return
 	case <-ctx.Done():
 		helpers.HandleError(c, http.StatusRequestTimeout, "Request timeout", ctx.Err())
 		return
-	case user = <-userChan:
-		if !helpers.VerifyPassword(user.Pin, body.OldPin) {
-			helpers.HandleError(c, http.StatusUnauthorized, "Old PIN is incorrect", nil)
-			return
-		}
 	}
 
-	// Second result
-	select {
-	case err := <-errorChan:
-		helpers.HandleError(c, http.StatusInternalServerError, "Failed to process request", err)
+	// Process user
+	user := <-userChan
+	otp := <-otpChan
+
+	// Verify old PIN
+	if !helpers.VerifyPassword(body.OldPin, user.Pin) {
+		helpers.HandleError(c, http.StatusUnauthorized, "Old PIN is incorrect", nil)
 		return
-	case <-ctx.Done():
-		helpers.HandleError(c, http.StatusRequestTimeout, "Request timeout", ctx.Err())
-		return
-	case otp = <-otpChan:
-		if !validateOTP(otp, body) {
-			helpers.HandleError(c, http.StatusUnauthorized, "Invalid OTP", nil)
-			return
-		}
 	}
 
 	// Hash new PIN
 	hashPin, err := helpers.HashPassword(body.NewPin)
 	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Failed to hash new PIN", err)
+		helpers.HandleError(c, http.StatusInternalServerError, "Failed to process PIN", err)
 		return
 	}
 
-	// Update user PIN synchronously to ensure consistency
+	// Update user PIN
 	user.Pin = hashPin
 	if err := user.UpdateUserPin(); err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Failed to update PIN", err)
+		helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
 		return
 	}
 
-	// Update cache asynchronously since it's not critical
-	go func() {
-		_ = cache.UpdateDataInCache(user.PhoneNumber, user, 0)
-	}()
+	// update otp as used
+	if err := otp.UpdateOTP(); err != nil {
+		helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
+		return
+	}
 
+	// update cache
+	go cache.UpdateDataInCache(user.PhoneNumber, user, 0)
+
+	// send response
 	helpers.HandleSuccess(c, "PIN updated successfully", nil)
-}
-
-// validateOTP checks if the OTP is valid for the user
-func validateOTP(otp *models.OTP, body models.UpdatePin) bool {
-	return otp != nil &&
-		otp.Code == body.CodeOTP &&
-		!otp.IsUsed &&
-		otp.PhoneNumber == body.PhoneNumber &&
-		time.Now().Before(otp.ExpiryAt) &&
-		otp.KeyUID == body.KeyUID
 }

@@ -13,6 +13,14 @@ func NewOTP(c *gin.Context) {
 	var body models.NewOTP
 	var otp models.OTP
 
+	// recover from panic
+	defer func() {
+		if r := recover(); r != nil {
+			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
+			return
+		}
+	}()
+
 	// Validate the phone number
 	if err := c.ShouldBindJSON(&body); err != nil {
 		helpers.HandleError(c, http.StatusBadRequest, "Invalid data or bad request", err)

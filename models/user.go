@@ -26,23 +26,16 @@ type UserLogin struct {
 
 // UpdateUserPin updates the pin of a user
 func (user User) UpdateUserPin() error {
-	tx := DB.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
+	DB.Transaction(func(tx *gorm.DB) error {
+		err := tx.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND locked = ? AND quota = ?", user.PhoneNumber, true, false, 0).Update("pin", user.Pin).Error
+
+		if err != nil {
+			// return any error will rollback
+			return fmt.Errorf("Failed to update user pin")
 		}
-	}()
-
-	err := tx.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND locked = ? AND quota = ?", user.PhoneNumber, true, false, 0).Update("pin", user.Pin).Error
-
-	if err != nil {
-		tx.Rollback()
-		return fmt.Errorf("Failed to update user pin")
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		return fmt.Errorf("Failed to commit transaction")
-	}
+		// return nil will commit the whole transaction
+		return nil
+	})
 	return nil
 }
 
@@ -62,7 +55,7 @@ func (user User) UpdateUserQuota() error {
 // LockUser locks a user account
 func (user User) LockUser() error {
 	DB.Transaction(func(tx *gorm.DB) error {
-		err := tx.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND quota = ?", user.PhoneNumber, true, 3).Update("locked", true).Error
+		err := tx.Model(&models.User{}).Where("phone_number = ? AND is_active = ? AND quota >= ?", user.PhoneNumber, true, 3).Update("locked", true).Error
 
 		if err != nil {
 			// return any error will rollback
@@ -158,7 +151,7 @@ func GetUserByPhoneNumber(phone string) (*models.User, error) {
 // GetWalletByUserID find wallet by user ID
 func (user User) GetWalletByUserID() (*models.Wallet, error) {
 	var wallet models.Wallet
-	err := DB.Select("id", "user_id", "currency", "balance").Where("user_id = ? AND is_active = ?", user.ID, true).First(&wallet).Error
+	err := DB.Select("id", "user_id", "currency", "balance").Where("user_id = ?", user.ID).First(&wallet).Error
 	if err != nil {
 		return nil, fmt.Errorf("No wallet found")
 	}

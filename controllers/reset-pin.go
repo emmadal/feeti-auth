@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -13,11 +14,20 @@ import (
 
 func ResetPin(c *gin.Context) {
 	var (
-		body     models.ResetPin
-		userChan = make(chan models.User, 1)
-		otpChan  = make(chan models.OTP, 1)
-		errChan  = make(chan error, 1)
+		body        models.ResetPin
+		user        models.User
+		otp         models.OTP
+		errChan     = make(chan error, 2) // Buffered channel to prevent blocking
+		successChan = make(chan bool, 1)
 	)
+
+	// recover from panic
+	defer func() {
+		if r := recover(); r != nil {
+			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
+			return
+		}
+	}()
 
 	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -29,86 +39,88 @@ func ResetPin(c *gin.Context) {
 		return
 	}
 
-	// fetch user and otp in parallel
+	// fetch user in a separate goroutine
 	go func() {
-		moduleUser, err := models.GetUserByPhoneNumber(body.PhoneNumber)
+		response, err := models.GetUserByPhoneNumber(body.PhoneNumber)
 		if err != nil {
 			errChan <- err
+			return
 		}
-		user := &models.User{User: *moduleUser}
-		userChan <- *user
+		// check if user is locked
+		if response.Locked || response.Quota >= 3 {
+			errChan <- fmt.Errorf("Feeti account locked, contact support")
+			return
+		}
+		user = models.User{User: *response}
+	}()
 
-		// fetch OTP
-		otp, err := models.GetOTPByCodeAndUID(body.PhoneNumber, body.CodeOTP, body.KeyUID)
+	// fetch OTP in a separate goroutine
+	go func() {
+		res, err := models.GetOTPByCodeAndUID(body.PhoneNumber, body.CodeOTP, body.KeyUID)
 		if err != nil {
 			errChan <- err
+			return
 		}
-
-		otpChan <- *otp
+		// check if OTP is valid
+		if res.IsUsed || time.Now().After(res.ExpiryAt) || res.KeyUID != body.KeyUID || res.Code != body.CodeOTP || res.PhoneNumber != body.PhoneNumber {
+			errChan <- fmt.Errorf("invalid or expired OTP")
+			return
+		}
+		otp = *res
 	}()
 
-	// wait for user and otp
+	// Handle errors from goroutines
 	select {
 	case err := <-errChan:
-		helpers.HandleError(c, http.StatusInternalServerError, "Failed to reset pin", err)
-		return
-	case <-ctx.Done():
-		helpers.HandleError(c, http.StatusRequestTimeout, "Request timed out", nil)
-		return
-	case otp := <-otpChan:
-		if otp.IsUsed || time.Now().After(otp.ExpiryAt) || otp.KeyUID != body.KeyUID || otp.Code != body.CodeOTP || otp.PhoneNumber != body.PhoneNumber {
-			helpers.HandleError(c, http.StatusUnauthorized, "OTP already used", nil)
-			return
-		}
-	case user := <-userChan:
-		if user.Locked || user.Quota >= 3 || !user.IsActive {
-			helpers.HandleError(c, http.StatusUnauthorized, "Account locked", nil)
-			return
-		}
-	}
-
-	// Hash PIN early to fail fast if invalid
-	hashPin, err := helpers.HashPassword(body.Pin)
-	if err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "Failed to process PIN", err)
-		return
-	}
-
-	// Update the user's pin
-	user := <-userChan
-	otp := <-otpChan
-	user.Pin = hashPin
-
-	// update otp and user's pin parallelly
-	go func() {
-		otp.IsUsed = true
-		if err := otp.UpdateOTP(); err != nil {
-			errChan <- err
-			return
-		}
-		otpChan <- otp
-		if err := user.UpdateUserPin(); err != nil {
-			errChan <- err
-			return
-		}
-		userChan <- user
-	}()
-
-	// wait for both updates
-	select {
-	case err := <-errChan:
-		helpers.HandleError(c, http.StatusInternalServerError, "Failed to reset pin", err)
+		helpers.HandleError(c, http.StatusUnauthorized, err.Error(), err)
 		return
 	case <-ctx.Done():
 		helpers.HandleError(c, http.StatusRequestTimeout, "Request timed out", nil)
 		return
 	default:
-		user = <-userChan
-		otp = <-otpChan
-
-		// update user in cache
-		go cache.UpdateDataInCache(user.PhoneNumber, user, 0)
-		helpers.HandleSuccess(c, "Reset pin successfully", nil)
+		// Continue if no errors
+		// Hash PIN early to fail fast if invalid
+		hashPin, err := helpers.HashPassword(body.Pin)
+		if err != nil {
+			helpers.HandleError(c, http.StatusBadRequest, "Failed to process PIN", err)
+			return
+		}
+		// update otp and user's pin
+		otp.IsUsed = true
+		user.Pin = hashPin
 	}
 
+	// Perform updates
+	go func() {
+		// update otp
+		if err := otp.UpdateOTP(); err != nil {
+			errChan <- err
+			return
+		}
+
+		// update user's pin
+		if err := user.UpdateUserPin(); err != nil {
+			errChan <- err
+			return
+		}
+
+		// Signal success after both updates complete
+		successChan <- true
+		close(successChan)
+		close(errChan)
+	}()
+
+	// wait for either error or success
+	select {
+	case err := <-errChan:
+		helpers.HandleError(c, http.StatusUnauthorized, err.Error(), err)
+		return
+	case <-ctx.Done():
+		helpers.HandleError(c, http.StatusRequestTimeout, "Request timed out", nil)
+		return
+	case <-successChan:
+		// update user in cache asynchronously
+		go cache.UpdateDataInCache(user.PhoneNumber, user, 0)
+		helpers.HandleSuccess(c, "PIN reset successfully", nil)
+	}
 }
