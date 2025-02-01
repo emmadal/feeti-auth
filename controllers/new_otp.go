@@ -29,7 +29,7 @@ func NewOTP(c *gin.Context) {
 
 	// Generate OTP
 	otp.KeyUID = uuid.NewString()
-	otp.Code = helpers.GenerateOTPCode(6)
+	otp.Code = helpers.GenerateOTPCode(5)
 	otp.PhoneNumber = body.PhoneNumber
 
 	err := otp.InsertOTP()

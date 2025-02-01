@@ -51,7 +51,8 @@ func ResetPin(c *gin.Context) {
 			errChan <- fmt.Errorf("Feeti account locked, contact support")
 			return
 		}
-		user = models.User{User: *response}
+		// user = models.User{User: *response}
+		user = *response
 	}()
 
 	// fetch OTP in a separate goroutine

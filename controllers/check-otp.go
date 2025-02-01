@@ -79,8 +79,7 @@ func CheckOTP(c *gin.Context) {
 		helpers.HandleSuccess(c, "OTP validated successfully", nil)
 	case <-ctx.Done():
 		// handle context timeout
-		helpers.HandleError(c, http.StatusInternalServerError, "Request timeout", ctx.Err())
+		helpers.HandleError(c, http.StatusRequestTimeout, "Request timeout", ctx.Err())
 		return
 	}
-
 }

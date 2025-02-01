@@ -34,6 +34,10 @@ func Login(c *gin.Context) {
 
 	if err == nil {
 		// If user found in cache
+		if cachedUser.DeviceToken != body.DeviceToken {
+			cachedUser.DeviceToken = body.DeviceToken
+		}
+		// Check if account is locked or has exceeded quota
 		if cachedUser.Locked && cachedUser.Quota >= 3 {
 			helpers.HandleError(c, http.StatusUnauthorized, "Account locked. Login attempts exceeded", nil)
 			return
@@ -48,6 +52,7 @@ func Login(c *gin.Context) {
 		handleSuccessfulLogin(c, &cachedUser)
 		return
 	}
+
 	// Get user from database
 	user, err := models.GetUserByPhoneNumber(body.PhoneNumber)
 	if err != nil {
@@ -55,17 +60,18 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// Create local user object to avoid circular reference
-	localUser := models.User{User: *user}
-
 	// Verify PIN
 	if ok := helpers.VerifyPassword(body.Pin, user.Pin); !ok {
-		handleFailedLogin(c, &localUser)
+		handleFailedLogin(c, user)
 		return
 	}
 
 	// send success response
-	handleSuccessfulLogin(c, &localUser)
+	user.DeviceToken = body.DeviceToken
+	if body.DeviceToken != user.DeviceToken {
+		user.DeviceToken = body.DeviceToken
+	}
+	handleSuccessfulLogin(c, user)
 }
 
 // handleFailedLogin handles failed login
@@ -77,7 +83,7 @@ func handleFailedLogin(c *gin.Context, user *models.User) {
 		}
 		user.Quota++
 		go cache.UpdateDataInCache(user.PhoneNumber, user, 0)
-		helpers.HandleError(c, http.StatusUnauthorized, "Invalid credentials,", nil)
+		helpers.HandleError(c, http.StatusUnauthorized, "Invalid credentials", nil)
 		return
 	}
 
@@ -139,20 +145,20 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User) {
 		return
 	}
 
-	// Cache the user for future requests
+	// Cache the user for future requests and update device token
 	go cache.SetDataInCache(user.PhoneNumber, user, 0)
+	go user.UpdateDeviceToken()
 
 	// Send success response
 	helpers.HandleSuccessData(c, "Login successful", map[string]interface{}{
 		"token": token,
 		"user": gin.H{
-			"id":           user.ID,
-			"phone":        user.PhoneNumber,
-			"first_name":   user.FirstName,
-			"last_name":    user.LastName,
-			"device_token": user.DeviceToken,
-			"photo":        user.Photo,
-			"email":        user.Email,
+			"id":         user.ID,
+			"phone":      user.PhoneNumber,
+			"first_name": user.FirstName,
+			"last_name":  user.LastName,
+			"photo":      user.Photo,
+			"email":      user.Email,
 		},
 		"wallet": gin.H{
 			"id":       wallet.ID,
