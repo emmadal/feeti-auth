@@ -137,7 +137,8 @@ func UpdatePin(c *gin.Context) {
 	}
 
 	// update cache
-	go cache.UpdateDataInCache(user.PhoneNumber, user, 0)
+	cacheKey := fmt.Sprintf("user:%s", user.PhoneNumber)
+	go cache.UpdateRedisData[models.User](c, cacheKey, user)
 
 	// send response
 	helpers.HandleSuccess(c, "PIN updated successfully", nil)

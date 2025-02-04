@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 
@@ -30,9 +31,11 @@ func Login(c *gin.Context) {
 	}
 
 	// Try to get user from cache first
-	cachedUser, err := cache.GetDataFromCache[models.User](body.PhoneNumber)
+	cacheKey := fmt.Sprintf("user:%s", body.PhoneNumber)
+	cachedUser, err := cache.GetRedisData[models.User](c, cacheKey)
 
 	if err == nil {
+		fmt.Println("user found in cache")
 		// If user found in cache
 		if cachedUser.DeviceToken != body.DeviceToken {
 			cachedUser.DeviceToken = body.DeviceToken
@@ -52,6 +55,8 @@ func Login(c *gin.Context) {
 		handleSuccessfulLogin(c, &cachedUser)
 		return
 	}
+
+	fmt.Println("user not found in cache")
 
 	// Get user from database
 	user, err := models.GetUserByPhoneNumber(body.PhoneNumber)
@@ -146,7 +151,8 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User) {
 	}
 
 	// Cache the user for future requests and update device token
-	go cache.SetDataInCache(user.PhoneNumber, user, 0)
+	cacheKey := fmt.Sprintf("user:%s", user.PhoneNumber)
+	go cache.SetRedisData(c, cacheKey, user, 0)
 	go user.UpdateDeviceToken()
 
 	// Send success response

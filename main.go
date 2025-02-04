@@ -8,6 +8,7 @@ import (
 
 	"github.com/emmadal/feeti-backend-user/controllers"
 	"github.com/emmadal/feeti-backend-user/models"
+	"github.com/emmadal/feeti-module/cache"
 	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -34,6 +35,12 @@ func main() {
 
 	// Set api version group
 	v1 := server.Group("/v1/api")
+
+	// Redis connection
+	err := cache.InitRedis()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// initialize server
 	s := &http.Server{

@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 
@@ -57,7 +58,8 @@ func Register(c *gin.Context) {
 	}
 
 	// Store user data in the cache asynchronously
-	go cache.SetDataInCache(user.PhoneNumber, user.User, 0)
+	cacheKey := fmt.Sprintf("user:%s", user.PhoneNumber)
+	go cache.SetRedisData(c, cacheKey, user.User, 0)
 
 	// Send success response
 	helpers.HandleSuccessData(c, "User registered successfully", gin.H{

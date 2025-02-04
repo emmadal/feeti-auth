@@ -33,12 +33,6 @@ func CheckOTP(c *gin.Context) {
 		return
 	}
 
-	// Validate required fields
-	if body.PhoneNumber == "" || body.KeyUID == "" || body.Code == "" {
-		helpers.HandleError(c, http.StatusBadRequest, "Missing required fields", nil)
-		return
-	}
-
 	// retrieve the OTP in a separate goroutine
 	go func() {
 		otp, err := body.GetOTP()
@@ -66,6 +60,10 @@ func CheckOTP(c *gin.Context) {
 		}
 		if time.Now().After(otp.ExpiryAt) {
 			helpers.HandleError(c, http.StatusForbidden, "OTP has expired", nil)
+			return
+		}
+		if otp.Code != body.Code || otp.KeyUID != body.KeyUID || otp.PhoneNumber != body.PhoneNumber {
+			helpers.HandleError(c, http.StatusForbidden, "Invalid OTP", nil)
 			return
 		}
 		// update the OTP status
