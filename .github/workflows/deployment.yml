@@ -38,11 +38,9 @@ jobs:
       - name: Build and Push Docker image
         run: |
           docker buildx build \
-            --build-arg JWT_KEY="${{ secrets.JWT_KEY }}" \
             --build-arg PORT="${{ secrets.PORT }}" \
             --build-arg SMS_JWT="${{ secrets.SMS_JWT }}" \
             --build-arg SMS_API_URL="${{ secrets.SMS_API_URL }}" \
-            --build-arg SMS_SENDER_ID="${{ secrets.SMS_SENDER_ID }}" \
             --build-arg DB_HOST="${{ secrets.DB_HOST }}" \
             --build-arg DB_USER="${{ secrets.DB_USER }}" \
             --build-arg DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
@@ -56,10 +54,8 @@ jobs:
       - name: Deploy to VPS
         env:
           PORT: ${{ secrets.PORT }}
-          JWT_KEY: ${{ secrets.JWT_KEY }}
           SMS_JWT: ${{ secrets.SMS_JWT }}
           SMS_API_URL: ${{ secrets.SMS_API_URL }}
-          SMS_SENDER_ID: ${{ secrets.SMS_SENDER_ID }}
           DB_HOST: ${{ secrets.DB_HOST }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}

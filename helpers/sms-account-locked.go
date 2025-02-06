@@ -12,7 +12,7 @@ import (
 func SmsAccountLocked(phoneNumber string) {
 
 	payload := []byte(fmt.Sprintf(
-		`{"recipient": "%s", "sender_id": "%s", "type": "plain", "message": "Votre compte Feeti a été temporairement bloqué. Ceci est due au nombre de tentatives de connexion erronées. Veuillez contacter le support 124."}`, strings.Split(phoneNumber, "+")[1], os.Getenv("SMS_SENDER_ID")))
+		`{"recipient": "%s", "sender_id": "%s", "type": "plain", "message": "Votre compte Feeti a été temporairement bloqué. Ceci est due au nombre de tentatives de connexion erronées. Veuillez contacter le support 124."}`, strings.Split(phoneNumber, "+")[1], "Feeti"))
 
 	req, err := http.NewRequest("POST", os.Getenv("SMS_API_URL"), bytes.NewBuffer(payload))
 	if err != nil {
