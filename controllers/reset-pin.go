@@ -24,7 +24,7 @@ func ResetPin(c *gin.Context) {
 	// recover from panic
 	defer func() {
 		if r := recover(); r != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
+			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", fmt.Errorf("recovered: %v", r))
 			return
 		}
 	}()
@@ -36,6 +36,12 @@ func ResetPin(c *gin.Context) {
 	// validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
 		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
+		return
+	}
+
+	// search if user exists in DB
+	if !models.CheckUserByPhone(body.PhoneNumber) {
+		helpers.HandleError(c, http.StatusNotFound, "User not found", nil)
 		return
 	}
 
@@ -51,7 +57,6 @@ func ResetPin(c *gin.Context) {
 			errChan <- fmt.Errorf("Feeti account locked, contact support")
 			return
 		}
-		// user = models.User{User: *response}
 		user = *response
 	}()
 
@@ -77,19 +82,18 @@ func ResetPin(c *gin.Context) {
 		return
 	case <-ctx.Done():
 		helpers.HandleError(c, http.StatusRequestTimeout, "Request timed out", nil)
-		return
-	default:
-		// Continue if no errors
-		// Hash PIN early to fail fast if invalid
-		hashPin, err := helpers.HashPassword(body.Pin)
-		if err != nil {
-			helpers.HandleError(c, http.StatusBadRequest, "Failed to process PIN", err)
-			return
-		}
-		// update otp and user's pin
-		otp.IsUsed = true
-		user.Pin = hashPin
 	}
+
+	// Continue if no errors
+	// Hash PIN early to fail fast if invalid
+	hashPin, err := helpers.HashPassword(body.Pin)
+	if err != nil {
+		helpers.HandleError(c, http.StatusBadRequest, "Failed to process PIN", err)
+		return
+	}
+	// update otp and user's pin
+	otp.IsUsed = true
+	user.Pin = hashPin
 
 	// Perform updates
 	go func() {
@@ -107,8 +111,6 @@ func ResetPin(c *gin.Context) {
 
 		// Signal success after both updates complete
 		successChan <- true
-		close(successChan)
-		close(errChan)
 	}()
 
 	// wait for either error or success
@@ -120,9 +122,11 @@ func ResetPin(c *gin.Context) {
 		helpers.HandleError(c, http.StatusRequestTimeout, "Request timed out", nil)
 		return
 	case <-successChan:
+		close(successChan)
+		close(errChan)
 		// update user in cache asynchronously
 		cacheKey := fmt.Sprintf("user:%s", user.PhoneNumber)
-		go cache.UpdateRedisData[models.User](c, cacheKey, user)
+		go cache.UpdateRedisData(c, cacheKey, user)
 		helpers.HandleSuccess(c, "PIN reset successfully", nil)
 	}
 }
