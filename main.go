@@ -9,7 +9,6 @@ import (
 	"github.com/emmadal/feeti-backend-user/controllers"
 	"github.com/emmadal/feeti-backend-user/models"
 	"github.com/emmadal/feeti-module/cache"
-	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
@@ -56,7 +55,8 @@ func main() {
 	v1.POST("/check-otp", controllers.CheckOTP)
 	v1.POST("/login", controllers.Login)
 	v1.POST("/reset-pin", controllers.ResetPin)
-	v1.PUT("/update-pin", jwt.AuthAuthorization([]byte(os.Getenv("JWT_KEY"))), controllers.UpdatePin)
+	v1.PUT("/update-pin", controllers.UpdatePin)
+	v1.POST("/user", controllers.GetUser)
 
 	// start server
 	log.Printf("Server is running on port %s", os.Getenv("PORT"))

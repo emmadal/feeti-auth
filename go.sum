@@ -22,6 +22,8 @@ github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f h1:lO4WD4F/r
 github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f/go.mod h1:cuUVRXasLTGF7a8hSLbxyZXjz+1KgoB3wDUb6vlszIc=
 github.com/emmadal/feeti-module v0.0.0-20250204174616-6e7e9cd0f20d h1:eWy+llDryIXIXWh7rbl+h0zGqVNhldb0MaxXaO6Rh74=
 github.com/emmadal/feeti-module v0.0.0-20250204174616-6e7e9cd0f20d/go.mod h1:wvUcTe33RiMZ6lw/KOWaWAtnQ2g+T3C1DUMmzIFuEJc=
+github.com/emmadal/feeti-module v0.0.0-20250204205213-4c9a7726a5dd h1:mIHLZkx1r82d6g9ghHdEtckk1fHEOmC8v077sHjHgr8=
+github.com/emmadal/feeti-module v0.0.0-20250204205213-4c9a7726a5dd/go.mod h1:wvUcTe33RiMZ6lw/KOWaWAtnQ2g+T3C1DUMmzIFuEJc=
 github.com/gabriel-vasile/mimetype v1.4.8 h1:FfZ3gj38NjllZIeJAmMhr+qKL8Wu+nOoI3GqacKw1NM=
 github.com/gabriel-vasile/mimetype v1.4.8/go.mod h1:ByKUIKGjh1ODkGM1asKUbQZOLGrPjydw3hYPU2YU9t8=
 github.com/gin-contrib/sse v1.0.0 h1:y3bT1mUWUxDpW4JLQg/HnTqV4rozuW4tC9eFKTxYI9E=

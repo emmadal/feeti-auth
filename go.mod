@@ -5,7 +5,7 @@ go 1.23
 toolchain go1.23.4
 
 require (
-	github.com/emmadal/feeti-module v0.0.0-20250204174616-6e7e9cd0f20d
+	github.com/emmadal/feeti-module v0.0.0-20250204205213-4c9a7726a5dd
 	github.com/gin-gonic/gin v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1

@@ -53,7 +53,6 @@ func (user User) UpdateUserQuota() error {
 
 // LockUser locks a user account
 func (user User) LockUser() error {
-	fmt.Println("locked user")
 	DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Model(&User{}).Where("phone_number = ? AND is_active = ? AND quota >= ?", user.PhoneNumber, true, 3).Update("locked", true).Error
 
@@ -145,26 +144,39 @@ func CheckUserByPhone(phone string) bool {
 	return true
 }
 
-// GetWalletByUserID find wallet by user ID
-func (user User) GetWalletByUserID() (*Wallet, error) {
-	var wallet Wallet
-	err := DB.Select("id", "currency", "balance").Where("user_id = ?", user.ID).First(&wallet).Error
-	if err != nil {
-		return nil, fmt.Errorf("No wallet found")
-	}
-	return &wallet, nil
-}
+// GetUserAndWalletByPhone find user and wallet by phone number
+func GetUserAndWalletByPhone(phone string) (*User, *Wallet, error) {
+	var (
+		user   User
+		wallet Wallet
+	)
 
-// GetUserByID find user by ID
-func (user User) GetUserByID() (*User, error) {
-	var response User
-	err := DB.Select("id", "first_name", "last_name", "photo", "phone_number", "email").
-		Where("id = ? AND is_active = ? AND locked = ?", user.ID, true, false).
-		First(&response).Error
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		// Fetch user data
+		if err := tx.Select("id", "first_name", "last_name", "photo", "phone_number", "email", "pin", "quota", "locked", "device_token").
+			Where("phone_number = ? AND is_active = ? AND locked = ?", phone, true, false).
+			First(&user).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("user not found")
+			}
+			return fmt.Errorf("failed to fetch user")
+		}
+
+		// Fetch wallet data
+		if err := tx.Select("id", "currency", "balance").
+			Where("user_id = ?", user.ID).
+			First(&wallet).Error; err != nil {
+			return fmt.Errorf("failed to fetch wallet")
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		return nil, fmt.Errorf("No user found")
+		return nil, nil, err
 	}
-	return &response, nil
+
+	return &user, &wallet, nil
 }
 
 // UpdateDeviceToken update user device token
