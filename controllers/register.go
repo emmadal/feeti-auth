@@ -72,6 +72,8 @@ func Register(c *gin.Context) {
 			"email":        user.Email,
 			"phone_number": user.PhoneNumber,
 			"photo":        user.Photo,
+			"face_id":      user.FaceID,
+			"finger_print": user.FingerPrint,
 		},
 		"wallet": gin.H{
 			"id":       wallet.ID,
