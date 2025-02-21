@@ -46,6 +46,7 @@ func GetUser(c *gin.Context) {
 				"email":        user.Email,
 				"face_id":      user.FaceID,
 				"finger_print": user.FingerPrint,
+				"premium":      user.Premium,
 			},
 			"wallet": gin.H{
 				"id":       wallet.ID,

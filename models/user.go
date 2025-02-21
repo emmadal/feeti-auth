@@ -121,7 +121,7 @@ func (user User) CreateUser() (*User, *Wallet, error) {
 // GetUserByPhoneNumber find user by phone number
 func GetUserByPhoneNumber(phone string) (*User, error) {
 	var user User
-	err := DB.Select("id", "first_name", "last_name", "photo", "phone_number", "pin", "quota", "locked", "device_token", "email", "face_id", "finger_print").
+	err := DB.Select("id", "first_name", "last_name", "photo", "phone_number", "pin", "quota", "locked", "device_token", "email", "face_id", "finger_print", "premium").
 		Where("phone_number = ? AND is_active = ? AND locked = ?", phone, true, false).
 		First(&user).Error
 
@@ -153,7 +153,7 @@ func GetUserAndWalletByPhone(phone string) (*User, *Wallet, error) {
 
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		// Fetch user data
-		if err := tx.Select("id", "first_name", "last_name", "photo", "phone_number", "email", "pin", "quota", "locked", "device_token", "face_id", "finger_print").
+		if err := tx.Select("id", "first_name", "last_name", "photo", "phone_number", "email", "pin", "quota", "locked", "device_token", "face_id", "finger_print", "premium").
 			Where("phone_number = ? AND is_active = ? AND locked = ?", phone, true, false).
 			First(&user).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
