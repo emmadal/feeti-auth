@@ -15,7 +15,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.23
+          go-version: 1.24
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
@@ -38,29 +38,32 @@ jobs:
       - name: Build and Push Docker image
         run: |
           docker buildx build \
-            --build-arg PORT="${{ secrets.PORT }}" \
+            --build-arg PORT=":4000" \
             --build-arg SMS_JWT="${{ secrets.SMS_JWT }}" \
+            --build-arg JWT_SECRET="${{ secrets.JWT_SECRET }}" \
             --build-arg SMS_API_URL="${{ secrets.SMS_API_URL }}" \
             --build-arg DB_HOST="${{ secrets.DB_HOST }}" \
             --build-arg DB_USER="${{ secrets.DB_USER }}" \
             --build-arg DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
             --build-arg DB_NAME="${{ secrets.DB_NAME }}" \
             --build-arg DB_PORT="${{ secrets.DB_PORT }}" \
+            --build-arg NEW_RELIC_LICENSE_KEY="${{ secrets.NEW_RELIC_LICENSE_KEY }}" \
             --build-arg GIN_MODE="release" \
             -t ${{ secrets.DOCKER_USERNAME }}/backend-user:${{ env.new_tag }} .
           docker push ${{ secrets.DOCKER_USERNAME }}/backend-user:${{ env.new_tag }}
-  
 
       - name: Deploy to VPS
         env:
-          PORT: ${{ secrets.PORT }}
+          PORT: ":4000"
           SMS_JWT: ${{ secrets.SMS_JWT }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
           SMS_API_URL: ${{ secrets.SMS_API_URL }}
           DB_HOST: ${{ secrets.DB_HOST }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_PORT: ${{ secrets.DB_PORT }}
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
           GIN_MODE: "release"
           new_tag: ${{ env.new_tag }}
           TAG: ${{ env.new_tag }}

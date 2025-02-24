@@ -11,6 +11,8 @@ import (
 	"github.com/emmadal/feeti-module/cache"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	nrgin "github.com/newrelic/go-agent/v3/integrations/nrgin"
+	"github.com/newrelic/go-agent/v3/newrelic"
 )
 
 func main() {
@@ -29,6 +31,18 @@ func main() {
 	// Initialize Gin server
 	server := gin.Default()
 
+	// Initialize New Relic
+	app, err := newrelic.NewApplication(
+		newrelic.ConfigAppName("backend-user"),
+		newrelic.ConfigLicense(os.Getenv("NEW_RELIC_LICENSE_KEY")),
+		newrelic.ConfigDebugLogger(os.Stdout),
+		newrelic.ConfigCodeLevelMetricsEnabled(true),
+	)
+	if nil != err {
+		log.Fatal(err)
+	}
+	server.Use(nrgin.Middleware(app))
+
 	// Database connection
 	models.DBConnect()
 
@@ -36,7 +50,7 @@ func main() {
 	v1 := server.Group("/v1/api")
 
 	// Redis connection
-	err := cache.InitRedis()
+	err = cache.InitRedis()
 	if err != nil {
 		log.Fatal(err)
 	}
