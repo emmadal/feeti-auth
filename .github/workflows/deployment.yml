@@ -54,7 +54,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             cd /var/backend-user
-            docker service rm backend || true
             export TAG=${{ github.run_number }}  # Set the TAG variable
+            docker load -i backend-user-${{ github.run_number }}.tar
             docker stack deploy --compose-file docker-compose.yml backend-user
           EOF
