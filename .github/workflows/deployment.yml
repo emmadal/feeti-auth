@@ -50,10 +50,10 @@ jobs:
       - name: Transfer image to VPS
         run: scp -o StrictHostKeyChecking=no backend-user-${{ github.run_number }}.tar ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/backend-user/
 
-      - name: Load image and deploy to VPS
+      - name: Deploy image to VPS
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             cd /var/backend-user
-            docker load -i backend-user-${{ github.run_number }}.tar
-            docker service update --force --image backend-user:${{ github.run_number }} backend-user
+            docker service rm backend || true
+            TAG=${{ github.run_number }} docker stack deploy --compose-file docker-compose.yml backend-user
           EOF
