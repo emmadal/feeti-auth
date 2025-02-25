@@ -42,17 +42,17 @@ jobs:
             -t backend-user:${{ github.run_number }} .
 
 
-      - name: Save Image as tar.gz
+      - name: Save Image as tar
         run: |
-          docker save backend-user:${{ github.run_number }} | tar -cvzf backend-user-${{ github.run_number }}.tar.gz
+          docker save backend-user:${{ github.run_number }} | tar -cvf backend-user-${{ github.run_number }}.tar
 
-      
+
       - name: Transfer image to VPS
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             cd /var/backend-user
             mkdir -p backend-user-${{ github.run_number }}
-            tar -xvzf backend-user-${{ github.run_number }}.tar.gz -C backend-user-${{ github.run_number }}
+            tar -xvf backend-user-${{ github.run_number }}.tar -C backend-user-${{ github.run_number }}
           EOF
 
 
