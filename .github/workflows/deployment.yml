@@ -17,6 +17,26 @@ jobs:
         with:
           go-version: 1.24
 
+      - name: Create .env file dynamically
+        run: |
+          cat <<EOF > .env
+          PORT=${{ secrets.PORT }}
+          SMS_JWT=${{ secrets.SMS_JWT }}
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+          REDIS_HOST=${{ secrets.REDIS_HOST }}
+          REDIS_USERNAME=${{ secrets.REDIS_USERNAME }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          SMS_API_URL=${{ secrets.SMS_API_URL }}
+          DB_HOST=${{ secrets.DB_HOST }}
+          DB_USER=${{ secrets.DB_USER }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          DB_NAME=${{ secrets.DB_NAME }}
+          DB_PORT=${{ secrets.DB_PORT }}
+          NEW_RELIC_LICENSE_KEY=${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          GIN_MODE=${{ secrets.GIN_MODE }}
+          EOF
+        shell: bash
+
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.5.4
         with:
@@ -47,8 +67,10 @@ jobs:
       - name: Save Image as tar
         run: docker save -o backend-user-${{ github.run_number }}.tar backend-user:${{ github.run_number }}
 
-      - name: Transfer image to VPS
-        run: scp -o StrictHostKeyChecking=no backend-user-${{ github.run_number }}.tar ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/backend-user/
+      - name: Transfer image and .env to VPS
+        run: |
+          scp -o StrictHostKeyChecking=no backend-user-${{ github.run_number }}.tar ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/backend-user/
+          scp -o StrictHostKeyChecking=no .env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/backend-user/
 
       - name: Deploy image to VPS
         run: |
