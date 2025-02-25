@@ -18,11 +18,11 @@ import (
 func main() {
 	// Load environment variables
 	mode := os.Getenv("GIN_MODE")
-	if mode == "debug" || mode == "" {
+	if mode != "release" {
 		gin.SetMode(gin.DebugMode)
 		err := godotenv.Load()
 		if err != nil {
-			log.Fatal("Error loading .env file")
+			log.Fatalln("Error loading .env file")
 		}
 	} else {
 		gin.SetMode(gin.ReleaseMode)
@@ -39,7 +39,7 @@ func main() {
 		newrelic.ConfigCodeLevelMetricsEnabled(true),
 	)
 	if nil != err {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
 	server.Use(nrgin.Middleware(app))
 
@@ -52,7 +52,7 @@ func main() {
 	// Redis connection
 	err = cache.InitRedis()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
 
 	// initialize server

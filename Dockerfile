@@ -1,39 +1,28 @@
 # Stage 1: Build the Go binary
 FROM golang:1.24.0-alpine AS builder
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Create a limited-permissions user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-
-# Change the ownership of the working directory to the new user
-RUN chown -R appuser:appgroup /app
-
-# Switch to the non-root user
-USER appuser
-
-# Copy the Go modules files and download the dependencies first (this will help with caching)
+# Copy go.mod and go.sum first to cache dependencies
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the rest of the application code
+# Copy the application source code
 COPY . .
 
 # Build the Go binary with optimizations
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o backend-user .
 
-# Stage 2: Create a smaller image to run the Go app
-FROM alpine:latest
+# Stage 2: Create a minimal runtime image
+FROM scratch  
 
-# Set working directory in runtime image
 WORKDIR /app
 
-# Copy the binary from the builder
+# Copy only the necessary binary from the builder stage
 COPY --from=builder /app/backend-user /app/
 
-# Expose the port on which the Gin API will run
+# Expose the port for the application
 EXPOSE 4000
 
 # Run the Go binary
-CMD ["./backend-user"]
+CMD ["/app/backend-user"]

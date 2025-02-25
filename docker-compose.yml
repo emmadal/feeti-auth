@@ -1,11 +1,11 @@
 version: '3.8'
 services:
   backend:
-    image: emmadal/backend-user:${TAG}
+    image: backend-user:${{ github.run_number }}
     container_name: backend-user
-    hostname: backend-user-{1..5}
+    hostname: backend-user-{1..4}
     deploy:
-      replicas: 5
+      replicas: 4
       restart_policy:
         condition: on-failure
       update_config:

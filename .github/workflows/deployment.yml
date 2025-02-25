@@ -17,29 +17,19 @@ jobs:
         with:
           go-version: 1.24
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Retrieve Latest Docker Tag and Increment
-        id: get_tag
-        run: |
-          latest_tag=$(curl -s https://hub.docker.com/v2/repositories/${{ secrets.DOCKER_USERNAME }}/backend-user/tags | jq -r '.results[0].name')
-          new_tag=$((latest_tag + 1))
-          echo "new_tag=$new_tag" >> $GITHUB_ENV
-
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.5.4
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
-      - name: Build and Push Docker image
+      - name: Build Docker image
         run: |
           docker buildx build \
-            --build-arg PORT=":4000" \
+            --build-arg PORT="${{ secrets.PORT }}" \
             --build-arg SMS_JWT="${{ secrets.SMS_JWT }}" \
+            --build-arg REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
+            --build-arg REDIS_HOST="${{ secrets.REDIS_HOST }}" \
+            --build-arg REDIS_USERNAME="${{ secrets.REDIS_USERNAME }}" \
             --build-arg JWT_SECRET="${{ secrets.JWT_SECRET }}" \
             --build-arg SMS_API_URL="${{ secrets.SMS_API_URL }}" \
             --build-arg DB_HOST="${{ secrets.DB_HOST }}" \
@@ -48,28 +38,28 @@ jobs:
             --build-arg DB_NAME="${{ secrets.DB_NAME }}" \
             --build-arg DB_PORT="${{ secrets.DB_PORT }}" \
             --build-arg NEW_RELIC_LICENSE_KEY="${{ secrets.NEW_RELIC_LICENSE_KEY }}" \
-            --build-arg GIN_MODE="release" \
-            -t ${{ secrets.DOCKER_USERNAME }}/backend-user:${{ env.new_tag }} .
-          docker push ${{ secrets.DOCKER_USERNAME }}/backend-user:${{ env.new_tag }}
+            --build-arg GIN_MODE="${{ secrets.GIN_MODE }}" \
+            -t backend-user:${{ github.run_number }} .
 
-      - name: Deploy to VPS
-        env:
-          PORT: ":4000"
-          SMS_JWT: ${{ secrets.SMS_JWT }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          SMS_API_URL: ${{ secrets.SMS_API_URL }}
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
-          GIN_MODE: "release"
-          new_tag: ${{ env.new_tag }}
-          TAG: ${{ env.new_tag }}
+
+      - name: Save Image as tar.gz
+        run: |
+          docker save backend-user:${{ github.run_number }} | tar -cvzf backend-user-${{ github.run_number }}.tar.gz
+
+      
+      - name: Transfer image to VPS
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            cd /var/backend-user
+            mkdir -p backend-user-${{ github.run_number }}
+            tar -xvzf backend-user-${{ github.run_number }}.tar.gz -C backend-user-${{ github.run_number }}
+          EOF
+
+
+      - name: Load image and deploy to VPS
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             cd /var/backend-user
             docker service rm backend || true
-            TAG=${{ env.new_tag }} docker stack deploy --compose-file docker-compose.yml backend-user
+            TAG=${{ github.run_number }} docker stack deploy --compose-file docker-compose.yml backend-user
           EOF
