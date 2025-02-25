@@ -25,7 +25,7 @@ type UserLogin struct {
 
 // UpdateUserPin updates the pin of a user
 func (user User) UpdateUserPin() error {
-	DB.Transaction(func(tx *gorm.DB) error {
+	_ = DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Model(&User{}).Where("phone_number = ? AND is_active = ? AND locked = ? AND quota = ?", user.PhoneNumber, true, false, 0).Update("pin", user.Pin).Error
 
 		if err != nil {
@@ -40,7 +40,7 @@ func (user User) UpdateUserPin() error {
 
 // UpdateUserQuota updates the user data
 func (user User) UpdateUserQuota() error {
-	DB.Transaction(func(tx *gorm.DB) error {
+	_ = DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Model(&User{}).Where("phone_number = ? AND is_active = ? AND locked = ? AND quota < ?", user.PhoneNumber, true, false, 3).Update("quota", gorm.Expr("quota + ?", 1)).Error
 		if err != nil {
 			// return any error will rollback
@@ -53,7 +53,7 @@ func (user User) UpdateUserQuota() error {
 
 // LockUser locks a user account
 func (user User) LockUser() error {
-	DB.Transaction(func(tx *gorm.DB) error {
+	_ = DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Model(&User{}).Where("phone_number = ? AND is_active = ? AND quota >= ?", user.PhoneNumber, true, 3).Update("locked", true).Error
 
 		if err != nil {
@@ -68,7 +68,7 @@ func (user User) LockUser() error {
 
 // ResetUserQuota resets the user quota
 func (user User) ResetUserQuota() error {
-	DB.Transaction(func(tx *gorm.DB) error {
+	_ = DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Model(&User{}).Where("phone_number = ? AND is_active = ? AND locked = ?", user.PhoneNumber, true, false).Update("quota", 0).Error
 
 		if err != nil {
@@ -86,7 +86,7 @@ func (user User) ResetUserQuota() error {
 func (user User) CreateUser() (*User, *Wallet, error) {
 	var createdUser User
 	var wallet Wallet
-	DB.Transaction(func(tx *gorm.DB) error {
+	_ = DB.Transaction(func(tx *gorm.DB) error {
 		// Create the user
 		if err := tx.Create(&user).Error; err != nil {
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
@@ -138,10 +138,7 @@ func CheckUserByPhone(phone string) bool {
 		Where("phone_number = ?", phone).
 		First(&user).Error
 
-	if err != nil {
-		return false
-	}
-	return true
+	return err == nil
 }
 
 // GetUserAndWalletByPhone find user and wallet by phone number
@@ -181,7 +178,7 @@ func GetUserAndWalletByPhone(phone string) (*User, *Wallet, error) {
 
 // UpdateDeviceToken update user device token
 func (user User) UpdateDeviceToken() error {
-	DB.Transaction(func(tx *gorm.DB) error {
+	_ = DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Model(&User{}).Where("phone_number = ? AND is_active = ?", user.PhoneNumber, true).Update("device_token", user.DeviceToken).Error
 		if err != nil {
 			// return any error will rollback

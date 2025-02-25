@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   backend:
-    image: backend-user:${{ github.run_number }}
+    image: backend-user:${TAG}
     container_name: backend-user
     hostname: backend-user-{1..4}
     deploy:

@@ -81,12 +81,14 @@ func handleFailedLogin(c *gin.Context, user *models.User) {
 	userKey, _ := getCacheKeys(user.PhoneNumber)
 
 	// Update login attempts in database and cache
-	if user.Quota >= 0 && user.Quota < 3 {
+	if user.Quota < 3 {
 		if err := user.UpdateUserQuota(); err != nil {
 			helpers.HandleError(c, http.StatusInternalServerError, "Failed to update login attempts", err)
 		}
 		user.Quota += 1
-		go cache.SetRedisData(c, userKey, user, 0)
+		go func() {
+			_ = cache.SetRedisData(c, userKey, user, 0)
+		}()
 		helpers.HandleError(c, http.StatusForbidden, "Invalid credentials", nil)
 		return
 	}
@@ -100,7 +102,9 @@ func handleFailedLogin(c *gin.Context, user *models.User) {
 
 		// Send SMS to user account locked and update cache
 		user.Locked = true
-		go cache.SetRedisData(c, userKey, user, 0)
+		go func() {
+			_ = cache.SetRedisData(c, userKey, user, 0)
+		}()
 		go helpers.SmsAccountLocked(user.PhoneNumber)
 
 		helpers.HandleError(c, http.StatusUnauthorized, "Account locked", nil)
@@ -114,7 +118,6 @@ func handleFailedLogin(c *gin.Context, user *models.User) {
 	}
 	// send error response
 	helpers.HandleError(c, http.StatusUnauthorized, "Invalid credentials", nil)
-	return
 }
 
 // handleSuccessfulLogin handles successful login
@@ -140,9 +143,11 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User, wallet *models.Wal
 
 	// Cache user and wallet asynchronously
 	user.Quota = 0
-	go cache.SetRedisData(c, userKey, user, 0)
-	go cache.SetRedisData(c, walletKey, wallet, 0)
-	go user.UpdateDeviceToken()
+	go func() {
+		_ = cache.SetRedisData(c, userKey, user, 0)
+		_ = cache.SetRedisData(c, walletKey, wallet, 0)
+		_ = user.UpdateDeviceToken()
+	}()
 
 	// Send success response
 	helpers.HandleSuccessData(c, "Login successful", map[string]interface{}{

@@ -49,7 +49,7 @@ func (otp OTP) GetUserByPhone() (*models.User, error) {
 
 // InsertOTP insert a new OTP into the database
 func (otp OTP) InsertOTP() error {
-	DB.Transaction(func(tx *gorm.DB) error {
+	_ = DB.Transaction(func(tx *gorm.DB) error {
 		// do some database operations in the transaction (use 'tx' from this point)
 		otp.ExpiryAt = time.Now().Add(2 * time.Minute)
 		if err := tx.Create(&otp.Otp).Error; err != nil {
@@ -64,7 +64,7 @@ func (otp OTP) InsertOTP() error {
 
 // UpdateOTP update the OTP
 func (otp OTP) UpdateOTP() error {
-	DB.Transaction(func(tx *gorm.DB) error {
+	_ = DB.Transaction(func(tx *gorm.DB) error {
 		// do some database operations in the transaction
 		err := tx.Model(&otp).Where("is_used = ? AND phone_number = ? AND key_uid = ? AND code = ?", false, otp.PhoneNumber, otp.KeyUID, otp.Code).Update("is_used", true).Error
 

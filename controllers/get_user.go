@@ -1,12 +1,10 @@
 package controllers
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
-	"github.com/emmadal/feeti-module/cache"
 	"github.com/gin-gonic/gin"
 )
 
@@ -81,60 +79,4 @@ func GetUser(c *gin.Context) {
 		},
 	})
 
-}
-
-// getCacheData retrieves user and wallet data from cache concurrently
-func retrieveUserFromCache(c *gin.Context, phoneNumber string) (*models.User, *models.Wallet, error) {
-	cacheKey := fmt.Sprintf("user:%s", phoneNumber)
-	walletKey := fmt.Sprintf("wallet:%s", phoneNumber)
-
-	type result struct {
-		data interface{}
-		err  error
-	}
-
-	userCh := make(chan result, 1)
-	walletCh := make(chan result, 1)
-
-	// Fetch user data
-	go func() {
-		user, err := cache.GetRedisData[models.User](c, cacheKey)
-		userCh <- result{data: user, err: err}
-	}()
-
-	// Fetch wallet data
-	go func() {
-		wallet, err := cache.GetRedisData[models.Wallet](c, walletKey)
-		walletCh <- result{data: wallet, err: err}
-	}()
-
-	// Get results
-	userResult := <-userCh
-	walletResult := <-walletCh
-
-	// Check for errors
-	if userResult.err != nil {
-		return nil, nil, userResult.err
-	}
-	if walletResult.err != nil {
-		return nil, nil, walletResult.err
-	}
-
-	// Type assertions
-	user, ok := userResult.data.(models.User)
-	if !ok {
-		return nil, nil, fmt.Errorf("invalid user data type")
-	}
-
-	wallet, ok := walletResult.data.(models.Wallet)
-	if !ok {
-		return nil, nil, fmt.Errorf("invalid wallet data type")
-	}
-
-	return &user, &wallet, nil
-}
-
-// getCacheKeys returns the cache keys for a given phone number
-func fetchCacheKeys(phone string) (string, string) {
-	return fmt.Sprintf("user:%s", phone), fmt.Sprintf("wallet:%s", phone)
 }

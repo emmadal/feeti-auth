@@ -126,7 +126,9 @@ func ResetPin(c *gin.Context) {
 		close(errChan)
 		// update user in cache asynchronously
 		cacheKey := fmt.Sprintf("user:%s", user.PhoneNumber)
-		go cache.UpdateRedisData(c, cacheKey, user)
+		go func() {
+			_ = cache.SetRedisData(c, cacheKey, user, 0)
+		}()
 		helpers.HandleSuccess(c, "PIN reset successfully", nil)
 	}
 }

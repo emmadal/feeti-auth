@@ -60,8 +60,11 @@ func Register(c *gin.Context) {
 	// Store user data in the cache asynchronously
 	userKey := fmt.Sprintf("user:%s", user.PhoneNumber)
 	walletKey := fmt.Sprintf("wallet:%s", user.PhoneNumber)
-	go cache.SetRedisData(c, userKey, user, 0)
-	go cache.SetRedisData(c, walletKey, wallet, 0)
+
+	go func() {
+		_ = cache.SetRedisData(c, userKey, user, 0)
+		_ = cache.SetRedisData(c, walletKey, wallet, 0)
+	}()
 
 	// Send success response
 	helpers.HandleSuccessData(c, "User registered successfully", gin.H{
