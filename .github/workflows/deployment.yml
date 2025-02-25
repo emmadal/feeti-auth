@@ -41,25 +41,19 @@ jobs:
             --build-arg GIN_MODE="${{ secrets.GIN_MODE }}" \
             -t backend-user:${{ github.run_number }} .
 
+      - name: Verify Docker Image Exists
+        run: docker images | grep backend-user
 
       - name: Save Image as tar
-        run: |
-          docker save backend-user:${{ github.run_number }} | tar -cvf backend-user-${{ github.run_number }}.tar
-
+        run: docker save -o backend-user-${{ github.run_number }}.tar backend-user:${{ github.run_number }}
 
       - name: Transfer image to VPS
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
-            cd /var/backend-user
-            mkdir -p backend-user-${{ github.run_number }}
-            tar -xvf backend-user-${{ github.run_number }}.tar -C backend-user-${{ github.run_number }}
-          EOF
-
+        run: scp -o StrictHostKeyChecking=no backend-user-${{ github.run_number }}.tar ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/backend-user/
 
       - name: Load image and deploy to VPS
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             cd /var/backend-user
-            docker service rm backend || true
-            TAG=${{ github.run_number }} docker stack deploy --compose-file docker-compose.yml backend-user
+            docker load -i backend-user-${{ github.run_number }}.tar
+            docker service update --force --image backend-user:${{ github.run_number }} backend-user
           EOF
