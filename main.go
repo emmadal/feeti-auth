@@ -71,6 +71,7 @@ func main() {
 	v1.POST("/reset-pin", controllers.ResetPin)
 	v1.PUT("/update-pin", controllers.UpdatePin)
 	v1.POST("/user", controllers.GetUser)
+	v1.GET("/health", controllers.HealthCheck)
 
 	// start server
 	log.Printf("Server is running on port %s", os.Getenv("PORT"))
