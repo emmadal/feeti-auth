@@ -17,13 +17,13 @@ import (
 
 func main() {
 	// Load environment variables
+	if err := godotenv.Load(); err != nil {
+		log.Fatalln("Error loading .env file")
+	}
+
 	mode := os.Getenv("GIN_MODE")
 	if mode != "release" {
 		gin.SetMode(gin.DebugMode)
-		err := godotenv.Load()
-		if err != nil {
-			log.Fatalln("Error loading .env file")
-		}
 	} else {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -35,7 +35,6 @@ func main() {
 	app, err := newrelic.NewApplication(
 		newrelic.ConfigAppName("backend-user"),
 		newrelic.ConfigLicense(os.Getenv("NEW_RELIC_LICENSE_KEY")),
-		newrelic.ConfigDebugLogger(os.Stdout),
 		newrelic.ConfigCodeLevelMetricsEnabled(true),
 	)
 	if nil != err {
