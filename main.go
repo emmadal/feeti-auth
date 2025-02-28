@@ -36,6 +36,7 @@ func main() {
 		newrelic.ConfigAppName("backend-user"),
 		newrelic.ConfigLicense(os.Getenv("NEW_RELIC_LICENSE_KEY")),
 		newrelic.ConfigCodeLevelMetricsEnabled(true),
+		newrelic.ConfigAppLogForwardingEnabled(true),
 	)
 	if nil != err {
 		log.Fatalln(err)
