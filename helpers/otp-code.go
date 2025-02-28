@@ -1,14 +1,28 @@
 package helpers
 
 import (
-	"math/rand"
+	"crypto/rand"
+
+	"github.com/sirupsen/logrus"
 )
 
-// GenerateOTPCode generate otp code for authentication
-func GenerateOTPCode(maxNum int) string {
-	otpCode := make([]byte, maxNum)
-	for i := range otpCode {
-		otpCode[i] = byte(rand.Intn(10) + '0')
+// GenerateOTPCode generates a secure OTP of given length
+func GenerateOTPCode(length int) string {
+	if length <= 0 {
+		logrus.WithFields(logrus.Fields{"length": length}).Error("Invalid OTP length")
+		return "00000"
 	}
-	return string(otpCode)
+
+	otp := make([]byte, length)
+	_, err := rand.Read(otp)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{"error": err}).Error("Random read failed")
+		return "00000"
+	}
+
+	for i := range otp {
+		otp[i] = (otp[i] % 10) + '0'
+	}
+
+	return string(otp)
 }

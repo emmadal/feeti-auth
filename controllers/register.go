@@ -1,15 +1,18 @@
 package controllers
 
 import (
-	"fmt"
+	"context"
+	"encoding/json"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
 	"github.com/emmadal/feeti-module/cache"
 	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 // Register handles user registration
@@ -23,14 +26,21 @@ func Register(c *gin.Context) {
 		}
 	}()
 
+	// Create a context with timeout (5s)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "bad request", err)
+		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
 		return
 	}
 
 	// search if user exists in DB
-	if models.CheckUserByPhone(body.PhoneNumber) {
+	if exists, err := models.CheckUserByPhone(ctx, body.PhoneNumber); err != nil {
+		helpers.HandleError(c, http.StatusInternalServerError, "Error checking user", err)
+		return
+	} else if exists {
 		helpers.HandleError(c, http.StatusConflict, "User already exists", nil)
 		return
 	}
@@ -44,7 +54,7 @@ func Register(c *gin.Context) {
 
 	// Attempt to create user and wallet in a transaction
 	body.Pin = hashedPin
-	user, wallet, err := body.CreateUser()
+	user, wallet, err := body.CreateUser(ctx)
 	if err != nil {
 		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to process user", err)
 		return
@@ -57,14 +67,8 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// Store user data in the cache asynchronously
-	userKey := fmt.Sprintf("user:%s", user.PhoneNumber)
-	walletKey := fmt.Sprintf("wallet:%s", user.PhoneNumber)
-
-	go func() {
-		_ = cache.SetRedisData(c, userKey, user, 0)
-		_ = cache.SetRedisData(c, walletKey, wallet, 0)
-	}()
+	// Update cache asynchronously
+	go cachedRegisterData(user, wallet)
 
 	// Send success response
 	helpers.HandleSuccessData(c, "User registered successfully", gin.H{
@@ -86,4 +90,30 @@ func Register(c *gin.Context) {
 		},
 		"token": token,
 	})
+}
+
+// cachedRegisterData caches user and wallet data in Redis
+func cachedRegisterData(user *models.User, wallet *models.Wallet) {
+	cacheCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	marshalUser := marshalData(user)
+	marshalWallet := marshalData(wallet)
+
+	userKey, walletKey := getCacheKeys(user.PhoneNumber)
+	pipeline := cache.ExportRedisClient().Pipeline()
+	pipeline.Set(cacheCtx, userKey, marshalUser, 0)
+	pipeline.Set(cacheCtx, walletKey, marshalWallet, 0)
+	if _, err := pipeline.Exec(cacheCtx); err != nil {
+		logrus.WithFields(logrus.Fields{"error": err, "userKey": userKey, "walletKey": walletKey}).Error("Failed to set data in pipeline")
+	}
+}
+
+// marshalData marshals data to JSON
+func marshalData(data interface{}) []byte {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{"error": err}).Error("Failed to marshal data")
+	}
+	return jsonData
 }

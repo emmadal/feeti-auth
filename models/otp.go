@@ -1,43 +1,43 @@
 package models
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/emmadal/feeti-module/models"
 	"gorm.io/gorm"
 )
 
-// OTP is a local type that embeds the non-local models.Otp type
-type OTP struct {
-	models.Otp
+// Otp is the struct for OTP in the database
+type Otp struct {
+	ID          int64     `json:"id" gorm:"primaryKey;autoIncrement"`
+	Code        string    `json:"code" gorm:"type:varchar(7);not null;index" binding:"required,min=5,max=5,numeric"`
+	IsUsed      bool      `json:"is_used" gorm:"type:boolean;not null;default:false"`
+	PhoneNumber string    `json:"phone_number" gorm:"type:varchar(15);not null;index" binding:"required,e164,min=11,max=14"`
+	KeyUID      string    `json:"key_uid" gorm:"type:varchar(100);not null;index" binding:"required,uuid"`
+	ExpiryAt    time.Time `json:"expiry_at" binding:"required"`
+	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-// NewOTP is a local type that embeds the non-local models.NewOtp type
-type NewOTP struct {
-	models.NewOtp
+// CheckOtp is the struct for checking the OTP
+type CheckOtp struct {
+	Code        string    `json:"code" binding:"required,min=5,max=5,numeric"`
+	PhoneNumber string    `json:"phone_number" binding:"required,e164,min=11,max=14"`
+	KeyUID      string    `json:"key_uid" binding:"required,uuid"`
+	ExpiryAt    time.Time `json:"expiry_at"`
 }
 
-// CheckOTP is a local type that embeds the non-local models.CheckOtp type
-type CheckOTP struct {
-	models.CheckOtp
-}
-
-// ResetPin is a local type that embeds the non-local models.ResetPin type
-type ResetPin struct {
-	models.ResetPin
-}
-
-// UpdatePin is a local type that embeds the non-local models.UpdatePin type
-type UpdatePin struct {
-	models.UpdatePin
+// NewOtp is the struct for creating a new OTP
+type NewOtp struct {
+	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
 }
 
 // GetUserByPhone get a user by phone number
-func (otp OTP) GetUserByPhone() (*models.User, error) {
-	var user models.User
-	err := DB.Select("id", "first_name", "last_name", "photo", "phone_number").
+func (otp Otp) GetUserByPhone(ctx context.Context) (*User, error) {
+	var user User
+	err := DB.WithContext(ctx).Select("id", "first_name", "last_name", "photo", "phone_number").
 		Where("phone_number = ? AND is_active = ?", otp.PhoneNumber, true).
 		First(&user).Error
 
@@ -48,11 +48,11 @@ func (otp OTP) GetUserByPhone() (*models.User, error) {
 }
 
 // InsertOTP insert a new OTP into the database
-func (otp OTP) InsertOTP() error {
-	_ = DB.Transaction(func(tx *gorm.DB) error {
+func (otp Otp) InsertOTP(ctx context.Context) error {
+	_ = DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// do some database operations in the transaction (use 'tx' from this point)
 		otp.ExpiryAt = time.Now().Add(2 * time.Minute)
-		if err := tx.Create(&otp.Otp).Error; err != nil {
+		if err := tx.Create(&otp).Error; err != nil {
 			// return any error will rollback
 			return fmt.Errorf("Failed to create OTP")
 		}
@@ -63,8 +63,8 @@ func (otp OTP) InsertOTP() error {
 }
 
 // UpdateOTP update the OTP
-func (otp OTP) UpdateOTP() error {
-	_ = DB.Transaction(func(tx *gorm.DB) error {
+func (otp Otp) UpdateOTP(ctx context.Context) error {
+	_ = DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// do some database operations in the transaction
 		err := tx.Model(&otp).Where("is_used = ? AND phone_number = ? AND key_uid = ? AND code = ?", false, otp.PhoneNumber, otp.KeyUID, otp.Code).Update("is_used", true).Error
 
@@ -79,20 +79,30 @@ func (otp OTP) UpdateOTP() error {
 }
 
 // GetOTP find the OTP in the database
-func (ch CheckOTP) GetOTP() (*OTP, error) {
-	var otp OTP
-	err := DB.Select("expiry_at", "is_used", "code", "phone_number", "key_uid").Where("phone_number = ? AND key_uid = ? AND code = ?", ch.PhoneNumber, ch.KeyUID, ch.Code).First(&otp).Error
+func (ch CheckOtp) GetOTP(ctx context.Context) (*Otp, error) {
+	var otp Otp
 
+	// Use context with GORM for timeout support
+	err := DB.WithContext(ctx).
+		Select("expiry_at", "is_used", "code", "phone_number", "key_uid").
+		Where("phone_number = ? AND key_uid = ? AND code = ?", ch.PhoneNumber, ch.KeyUID, ch.Code).
+		First(&otp).Error
+
+	// Handle different error cases
 	if err != nil {
-		return nil, fmt.Errorf("No OTP found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("OTP not found or invalid")
+		}
+		return nil, fmt.Errorf("database error: %w", err)
 	}
+
 	return &otp, nil
 }
 
 // GetOTPByCodeAndUID find OTP by code and uid
-func GetOTPByCodeAndUID(phone, code, uid string) (*OTP, error) {
-	var otp OTP
-	err := DB.Select("expiry_at", "is_used", "code", "phone_number", "key_uid").Where("phone_number = ? AND key_uid = ? AND code = ?", phone, uid, code).First(&otp).Error
+func GetOTPByCodeAndUID(ctx context.Context, phone, code, uid string) (*Otp, error) {
+	var otp Otp
+	err := DB.WithContext(ctx).Select("expiry_at", "is_used", "code", "phone_number", "key_uid").Where("phone_number = ? AND key_uid = ? AND code = ?", phone, uid, code).First(&otp).Error
 
 	if err != nil {
 		return nil, fmt.Errorf("No OTP found")

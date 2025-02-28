@@ -11,73 +11,57 @@ import (
 )
 
 func CheckOTP(c *gin.Context) {
-	var body models.CheckOTP
-	var errChan = make(chan error, 1)
-	var otpChan = make(chan models.OTP, 1)
+	var body models.CheckOtp
 
-	// recover from panic
+	// Recover from panic
 	defer func() {
 		if r := recover(); r != nil {
 			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
-			return
 		}
 	}()
 
-	// Create a context with timeout
+	// Create a context with timeout (5s)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// bind the request body to the struct
+	// Bind request body
 	if err := c.ShouldBindJSON(&body); err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
+		helpers.HandleError(c, http.StatusBadRequest, "Invalid request format", err)
 		return
 	}
 
-	// retrieve the OTP in a separate goroutine
-	go func() {
-		otp, err := body.GetOTP()
-		if err != nil {
-			errChan <- err
-			return
-		}
-		otpChan <- *otp
-	}()
-
-	defer func() {
-		close(otpChan)
-		close(errChan)
-	}()
-
-	select {
-	case err := <-errChan:
-		helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
-		return
-	case otp := <-otpChan:
-		// verify if the OTP is valid and not expired
-		if otp.IsUsed {
-			helpers.HandleError(c, http.StatusForbidden, "OTP has already been used", nil)
-			return
-		}
-		if time.Now().After(otp.ExpiryAt) {
-			helpers.HandleError(c, http.StatusForbidden, "OTP has expired", nil)
-			return
-		}
-		if otp.Code != body.Code || otp.KeyUID != body.KeyUID || otp.PhoneNumber != body.PhoneNumber {
-			helpers.HandleError(c, http.StatusForbidden, "Invalid OTP", nil)
-			return
-		}
-		// update the OTP status
-		otp.KeyUID = body.KeyUID
-		otp.PhoneNumber = body.PhoneNumber
-		otp.Code = body.Code
-		if err := otp.UpdateOTP(); err != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
-			return
-		}
-		helpers.HandleSuccess(c, "OTP validated successfully", nil)
-	case <-ctx.Done():
-		// handle context timeout
-		helpers.HandleError(c, http.StatusRequestTimeout, "Request timeout", ctx.Err())
+	// Fetch OTP (Pass context for timeout)
+	otp, err := body.GetOTP(ctx)
+	if err != nil {
+		helpers.HandleError(c, http.StatusInternalServerError, "OTP not found or invalid", err)
 		return
 	}
+
+	// Validate OTP
+	switch {
+	case otp.IsUsed:
+		helpers.HandleError(c, http.StatusForbidden, "OTP has already been used", nil)
+		return
+	case time.Now().After(otp.ExpiryAt):
+		helpers.HandleError(c, http.StatusForbidden, "OTP has expired", nil)
+		return
+	case otp.Code != body.Code:
+		helpers.HandleError(c, http.StatusForbidden, "Invalid OTP code", nil)
+		return
+	case otp.KeyUID != body.KeyUID:
+		helpers.HandleError(c, http.StatusForbidden, "Invalid OTP session", nil)
+		return
+	case otp.PhoneNumber != body.PhoneNumber:
+		helpers.HandleError(c, http.StatusForbidden, "Phone number mismatch", nil)
+		return
+	}
+
+	// Mark OTP as used BEFORE returning success
+	otp.IsUsed = true
+	if err := otp.UpdateOTP(ctx); err != nil {
+		helpers.HandleError(c, http.StatusInternalServerError, "Failed to update OTP", err)
+		return
+	}
+
+	helpers.HandleSuccess(c, "OTP validated successfully", nil)
 }

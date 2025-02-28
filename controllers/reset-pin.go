@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
@@ -16,7 +17,7 @@ func ResetPin(c *gin.Context) {
 	var (
 		body        models.ResetPin
 		user        models.User
-		otp         models.OTP
+		otp         models.Otp
 		errChan     = make(chan error, 2) // Buffered channel to prevent blocking
 		successChan = make(chan bool, 1)
 	)
@@ -40,21 +41,27 @@ func ResetPin(c *gin.Context) {
 	}
 
 	// search if user exists in DB
-	if !models.CheckUserByPhone(body.PhoneNumber) {
-		helpers.HandleError(c, http.StatusNotFound, "User not found", nil)
+	if exist, err := models.CheckUserByPhone(ctx, body.PhoneNumber); err != nil {
+		helpers.HandleError(c, http.StatusInternalServerError, "Error checking user", err)
+		return
+	} else if !exist {
+		helpers.HandleError(c, http.StatusNotFound, "Unable to reset PIN, user not found", nil)
 		return
 	}
 
 	// fetch user in a separate goroutine
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
-		response, err := models.GetUserByPhoneNumber(body.PhoneNumber)
+		defer wg.Done()
+		response, err := models.GetUserByPhoneNumber(ctx, body.PhoneNumber)
 		if err != nil {
-			errChan <- err
+			helpers.HandleError(c, http.StatusInternalServerError, "Error getting user", err)
 			return
 		}
 		// check if user is locked
 		if response.Locked || response.Quota >= 3 {
-			errChan <- fmt.Errorf("Feeti account locked, contact support")
+			helpers.HandleError(c, http.StatusForbidden, "Account locked, contact support", nil)
 			return
 		}
 		user = *response
@@ -62,29 +69,22 @@ func ResetPin(c *gin.Context) {
 
 	// fetch OTP in a separate goroutine
 	go func() {
-		res, err := models.GetOTPByCodeAndUID(body.PhoneNumber, body.CodeOTP, body.KeyUID)
+		defer wg.Done()
+		res, err := models.GetOTPByCodeAndUID(ctx, body.PhoneNumber, body.CodeOTP, body.KeyUID)
 		if err != nil {
-			errChan <- err
+			helpers.HandleError(c, http.StatusInternalServerError, "Error getting OTP", err)
 			return
 		}
 		// check if OTP is valid
 		if res.IsUsed || time.Now().After(res.ExpiryAt) || res.KeyUID != body.KeyUID || res.Code != body.CodeOTP || res.PhoneNumber != body.PhoneNumber {
-			errChan <- fmt.Errorf("invalid or expired OTP")
+			helpers.HandleError(c, http.StatusUnauthorized, "Invalid or expired OTP", nil)
 			return
 		}
 		otp = *res
 	}()
 
-	// Handle errors from goroutines
-	select {
-	case err := <-errChan:
-		helpers.HandleError(c, http.StatusUnauthorized, err.Error(), err)
-		return
-	case <-ctx.Done():
-		helpers.HandleError(c, http.StatusRequestTimeout, "Request timed out", nil)
-	}
+	wg.Wait()
 
-	// Continue if no errors
 	// Hash PIN early to fail fast if invalid
 	hashPin, err := helpers.HashPassword(body.Pin)
 	if err != nil {
@@ -98,13 +98,13 @@ func ResetPin(c *gin.Context) {
 	// Perform updates
 	go func() {
 		// update otp
-		if err := otp.UpdateOTP(); err != nil {
+		if err := otp.UpdateOTP(ctx); err != nil {
 			errChan <- err
 			return
 		}
 
 		// update user's pin
-		if err := user.UpdateUserPin(); err != nil {
+		if err := user.UpdateUserPin(ctx); err != nil {
 			errChan <- err
 			return
 		}

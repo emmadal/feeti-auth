@@ -1,9 +1,12 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
@@ -13,143 +16,154 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const MaxLoginAttempts = 3
+
 // Login handler to sign in user
 func Login(c *gin.Context) {
 	var body models.UserLogin
 
-	// recover from panic
+	// Recover from panic
 	defer func() {
 		if r := recover(); r != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", fmt.Errorf("recovered: %v", r))
+			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
 			return
 		}
 	}()
 
-	// Bind the request body
+	// Create a context with timeout (5s)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
 		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
 		return
 	}
 
-	// Try to get user and wallet from cache first
-	cachedUser, cachedWallet, err := getCacheData(c, body.PhoneNumber)
-
-	// If user and wallet found in cache
+	// Retrieve user and wallet from cache first
+	cachedUser, cachedWallet, err := getCacheData(ctx, body.PhoneNumber)
 	if err == nil {
 		if cachedUser.DeviceToken != body.DeviceToken {
 			cachedUser.DeviceToken = body.DeviceToken
 		}
-		// Check if account is locked or has exceeded quota
-		if cachedUser.Locked && cachedUser.Quota >= 3 {
-			helpers.HandleError(c, http.StatusUnauthorized, "Account locked. Login attempts exceeded", nil)
+		// Check if the user is locked and quota exceeded
+		if cachedUser.Locked && cachedUser.Quota >= MaxLoginAttempts {
+			helpers.HandleError(c, http.StatusUnauthorized, "Account locked. Login attempts exceeded. Please contact support", nil)
 			return
-		} else {
-			// Verify PIN
-			if ok := helpers.VerifyPassword(body.Pin, cachedUser.Pin); !ok {
-				handleFailedLogin(c, cachedUser)
-				return
-			} else {
-				// send success response
-				handleSuccessfulLogin(c, cachedUser, cachedWallet)
-				return
-			}
 		}
+		// Verify the PIN
+		if !helpers.VerifyPassword(body.Pin, cachedUser.Pin) {
+			handleFailedLogin(c, ctx, cachedUser, cachedWallet)
+			return
+		}
+		handleSuccessfulLogin(c, cachedUser, cachedWallet, body.DeviceToken)
+		return
 	}
 
-	// query datbase if user is not found in the cache
-	user, wallet, err := models.GetUserAndWalletByPhone(body.PhoneNumber)
+	// Otherwise, fetch user and wallet from database
+	user, wallet, err := models.GetUserAndWalletByPhone(ctx, body.PhoneNumber)
 	if err != nil {
 		helpers.HandleError(c, http.StatusNotFound, err.Error(), err)
 		return
 	}
 
-	// Verify PIN
-	if ok := helpers.VerifyPassword(body.Pin, user.Pin); !ok {
-		handleFailedLogin(c, user)
+	// Check if the user is locked and quota exceeded
+	if user.Locked && user.Quota >= MaxLoginAttempts {
+		helpers.HandleError(c, http.StatusUnauthorized, "Your account has been locked due to many failed login attempts", nil)
 		return
 	}
 
-	// send success response
-	if body.DeviceToken != user.DeviceToken {
-		user.DeviceToken = body.DeviceToken
+	// Verify the PIN
+	if !helpers.VerifyPassword(body.Pin, user.Pin) {
+		handleFailedLogin(c, ctx, user, wallet)
+		return
 	}
-	handleSuccessfulLogin(c, user, wallet)
+
+	// Send response
+	handleSuccessfulLogin(c, user, wallet, body.DeviceToken)
 }
 
-// handleFailedLogin handles failed login
-func handleFailedLogin(c *gin.Context, user *models.User) {
-	userKey, _ := getCacheKeys(user.PhoneNumber)
+// Optimized getCacheData using WaitGroup
+func getCacheData(ctx context.Context, phoneNumber string) (*models.User, *models.Wallet, error) {
+	userKey, walletKey := getCacheKeys(phoneNumber)
 
-	// Update login attempts in database and cache
-	if user.Quota < 3 {
-		if err := user.UpdateUserQuota(); err != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Failed to update login attempts", err)
+	var userData models.User
+	var walletData models.Wallet
+	var errUser, errWallet error
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Fetch user data
+	go func() {
+		defer wg.Done()
+		u, err := cache.GetRedisData[models.User](ctx, userKey)
+		if err == nil {
+			userData = u
+		} else {
+			errUser = err
 		}
-		user.Quota += 1
-		go func() {
-			_ = cache.SetRedisData(c, userKey, user, 0)
-		}()
-		helpers.HandleError(c, http.StatusForbidden, "Invalid credentials", nil)
-		return
-	}
+	}()
 
-	// Lock account if quota exceeded
-	if user.Quota >= 3 && !user.Locked {
-		if err := user.LockUser(); err != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", err)
-			return
+	// Fetch wallet data
+	go func() {
+		defer wg.Done()
+		w, err := cache.GetRedisData[models.Wallet](ctx, walletKey)
+		if err == nil {
+			walletData = w
+		} else {
+			errWallet = err
 		}
+	}()
 
-		// Send SMS to user account locked and update cache
-		user.Locked = true
-		go func() {
-			_ = cache.SetRedisData(c, userKey, user, 0)
-		}()
-		go helpers.SmsAccountLocked(user.PhoneNumber)
+	wg.Wait()
 
-		helpers.HandleError(c, http.StatusUnauthorized, "Account locked", nil)
-		return
+	if errUser != nil && errWallet != nil {
+		return nil, nil, fmt.Errorf("failed to fetch cache data: user: %v, wallet: %v", errUser, errWallet)
 	}
 
-	// Check if account is locked and quota is exceeded
-	if user.Locked && user.Quota >= 3 {
-		helpers.HandleError(c, http.StatusUnauthorized, "Your feeti account is locked. Please contact the helpdesk", nil)
-		return
-	}
-	// send error response
-	helpers.HandleError(c, http.StatusUnauthorized, "Invalid credentials", nil)
+	return &userData, &walletData, nil
 }
 
-// handleSuccessfulLogin handles successful login
-func handleSuccessfulLogin(c *gin.Context, user *models.User, wallet *models.Wallet) {
-	userKey, walletKey := getCacheKeys(user.PhoneNumber)
-
+// Optimized handleSuccessfulLogin with Redis Pipelining
+func handleSuccessfulLogin(c *gin.Context, user *models.User, wallet *models.Wallet, deviceToken string) {
 	// Generate JWT token
 	token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
 	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Authentication failed", err)
+		helpers.HandleError(c, http.StatusInternalServerError, "Failed to verify token", err)
 		return
 	}
 
-	// Reset quota asynchronously if needed
-	if user.Quota > 0 && !user.Locked {
+	// Reset user quota if needed to update database
+	if user.Quota > 0 {
 		go func() {
-			if err := user.ResetUserQuota(); err != nil {
-				// Log error but don't fail the request
-				logrus.WithFields(logrus.Fields{"error": err}).Error("Failed to reset quota")
+			bgCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+
+			if err := user.ResetUserQuota(bgCtx); err != nil {
+				logrus.WithFields(logrus.Fields{"error": err, "user_id": user.ID}).Error("Failed to reset user quota")
 			}
 		}()
 	}
 
-	// Cache user and wallet asynchronously
-	user.Quota = 0
-	go func() {
-		_ = cache.SetRedisData(c, userKey, user, 0)
-		_ = cache.SetRedisData(c, walletKey, wallet, 0)
-		_ = user.UpdateDeviceToken()
-	}()
+	// Update device token only if changed
+	if user.DeviceToken != deviceToken {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
 
-	// Send success response
+			if err := user.UpdateDeviceToken(bgCtx); err != nil {
+				logrus.WithFields(logrus.Fields{"error": err}).Error("Failed to update device token")
+			}
+		}()
+		user.DeviceToken = deviceToken
+	}
+
+	// Update cache asynchronously
+	user.Quota = 0
+	go cachedLoginData(user, wallet)
+
+	// Return success response
 	helpers.HandleSuccessData(c, "Login successful", map[string]interface{}{
 		"token": token,
 		"user": gin.H{
@@ -171,58 +185,50 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User, wallet *models.Wal
 	})
 }
 
-// getCacheData retrieves user and wallet data from cache concurrently
-func getCacheData(c *gin.Context, phoneNumber string) (*models.User, *models.Wallet, error) {
-	cacheKey := fmt.Sprintf("user:%s", phoneNumber)
-	walletKey := fmt.Sprintf("wallet:%s", phoneNumber)
-
-	type result struct {
-		data interface{}
-		err  error
+func handleFailedLogin(c *gin.Context, ctx context.Context, user *models.User, wallet *models.Wallet) {
+	// Increment quota
+	if user.Quota < MaxLoginAttempts {
+		user.Quota++
+		if err := user.UpdateUserQuota(ctx); err != nil {
+			helpers.HandleError(c, http.StatusInternalServerError, "Failed to update user quota", err)
+			return
+		}
 	}
 
-	userCh := make(chan result, 1)
-	walletCh := make(chan result, 1)
-
-	// Fetch user data
-	go func() {
-		user, err := cache.GetRedisData[models.User](c, cacheKey)
-		userCh <- result{data: user, err: err}
-	}()
-
-	// Fetch wallet data
-	go func() {
-		wallet, err := cache.GetRedisData[models.Wallet](c, walletKey)
-		walletCh <- result{data: wallet, err: err}
-	}()
-
-	// Get results
-	userResult := <-userCh
-	walletResult := <-walletCh
-
-	// Check for errors
-	if userResult.err != nil {
-		return nil, nil, userResult.err
-	}
-	if walletResult.err != nil {
-		return nil, nil, walletResult.err
+	// Lock the account if quota exceeds the limit
+	if user.Quota == MaxLoginAttempts && !user.Locked {
+		user.Locked = true
+		go helpers.SmsAccountLocked(user.PhoneNumber) // Send SMS to the user
+		if err := user.LockUser(ctx); err != nil {
+			helpers.HandleError(c, http.StatusInternalServerError, "Failed to lock user account", err)
+			return
+		}
 	}
 
-	// Type assertions
-	user, ok := userResult.data.(models.User)
-	if !ok {
-		return nil, nil, fmt.Errorf("invalid user data type")
-	}
+	// Set user data in cache
+	go cachedLoginData(user, wallet)
 
-	wallet, ok := walletResult.data.(models.Wallet)
-	if !ok {
-		return nil, nil, fmt.Errorf("invalid wallet data type")
-	}
-
-	return &user, &wallet, nil
+	// Return error
+	helpers.HandleError(c, http.StatusUnauthorized, "Invalid phone number or PIN", nil)
 }
 
-// getCacheKeys returns the cache keys for a given phone number
 func getCacheKeys(phone string) (string, string) {
 	return fmt.Sprintf("user:%s", phone), fmt.Sprintf("wallet:%s", phone)
+}
+
+// cachedLoginData caches user and wallet data in Redis
+func cachedLoginData(user *models.User, wallet *models.Wallet) {
+	cacheCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	marshalUser := marshalData(user)
+	marshalWallet := marshalData(wallet)
+
+	userKey, walletKey := getCacheKeys(user.PhoneNumber)
+	pipeline := cache.ExportRedisClient().Pipeline()
+	pipeline.Set(cacheCtx, userKey, marshalUser, 0)
+	pipeline.Set(cacheCtx, walletKey, marshalWallet, 0)
+	if _, err := pipeline.Exec(cacheCtx); err != nil {
+		logrus.WithFields(logrus.Fields{"error": err, "userKey": userKey, "walletKey": walletKey}).Error("Failed to set data in pipeline")
+	}
 }

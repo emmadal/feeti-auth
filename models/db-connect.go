@@ -6,7 +6,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/emmadal/feeti-module/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -35,10 +34,9 @@ func DBConnect() {
 			log.Fatalln(err)
 		}
 
-		if err := result.AutoMigrate(&models.User{}, &models.Otp{}, &models.Wallet{}); err != nil {
+		if err := result.AutoMigrate(&User{}, &Otp{}, &Wallet{}); err != nil {
 			log.Fatalln(err)
 		}
 		DB = result
 	})
-
 }
