@@ -9,7 +9,6 @@ import (
 	"github.com/emmadal/feeti-backend-user/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 )
 
 func NewOTP(c *gin.Context) {
@@ -53,11 +52,7 @@ func NewOTP(c *gin.Context) {
 	}
 
 	// Send OTP asynchronously
-	go func() {
-		if err := helpers.SendOTP(c, body.PhoneNumber, otp.Code); err != nil {
-			logrus.WithFields(logrus.Fields{"phone": body.PhoneNumber, "error": err}).Error("Failed to send OTP")
-		}
-	}()
+	go helpers.SendOTP(c, body.PhoneNumber, otp.Code)
 
 	// Send response immediately
 	helpers.HandleSuccessData(c, "OTP created successfully", otp.KeyUID)

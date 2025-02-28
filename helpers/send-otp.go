@@ -1,33 +1,32 @@
 package helpers
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"net/http"
 	"os"
-	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
+	"github.com/twilio/twilio-go"
+	twilioApi "github.com/twilio/twilio-go/rest/api/v2010"
 )
 
-func SendOTP(c *gin.Context, phoneNumber string, otp string) error {
-	payload := []byte(fmt.Sprintf(
-		`{"recipient": "%s", "sender_id": "%s", "type": "plain", "message": "Utilise le code %s pour te connecter à Feeti. Il Expire dans 2 minutes."}`, strings.Split(phoneNumber, "+")[1], "Feeti", otp))
+func SendOTP(c *gin.Context, phoneNumber string, otp string) {
+	client := twilio.NewRestClientWithParams(twilio.ClientParams{
+		Username: os.Getenv("TWILIO_ACCOUNT_SID"),
+		Password: os.Getenv("TWILIO_AUTH_TOKEN"),
+	})
 
-	req, err := http.NewRequestWithContext(c, "POST", os.Getenv("SMS_API_URL"), bytes.NewBuffer(payload))
+	message := fmt.Sprintf("Féeti: Votre code de vérification est %s. Ne partagez ce code avec personne. Il expire dans 2 minutes.", otp)
+
+	params := &twilioApi.CreateMessageParams{}
+	params.SetTo(phoneNumber)
+	params.SetFrom("+15202264216")
+	params.SetBody(message)
+
+	_, err := client.Api.CreateMessage(params)
 	if err != nil {
-		return errors.New("Unable to contact the sms provider")
+		logrus.WithFields(logrus.Fields{"error": err}).Error("Error sending SMS message to " + phoneNumber)
+	} else {
+		logrus.WithFields(logrus.Fields{"info": "SMS message sent to " + phoneNumber}).Info("SMS message sent")
 	}
-
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Authorization", "Bearer "+os.Getenv("SMS_JWT"))
-
-	client := &http.Client{}
-	res, err := client.Do(req)
-	if err != nil {
-		return errors.New("Unable to send the OTP")
-	}
-	defer res.Body.Close()
-	return nil
 }
