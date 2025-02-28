@@ -3,11 +3,11 @@ module github.com/emmadal/feeti-backend-user
 go 1.24.0
 
 require (
-	github.com/emmadal/feeti-module v0.0.0-20250221151227-9350b634e127
+	github.com/emmadal/feeti-module v0.0.0-20250227151133-2ea4baabe0b8
 	github.com/gin-gonic/gin v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
-	github.com/newrelic/go-agent/v3 v3.36.0
+	github.com/newrelic/go-agent/v3 v3.37.0
 	github.com/newrelic/go-agent/v3/integrations/nrgin v1.3.3
 	github.com/sirupsen/logrus v1.9.3
 	golang.org/x/crypto v0.35.0
@@ -52,7 +52,7 @@ require (
 	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250224174004-546df14abb99 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250227231956-55c901821b1e // indirect
 	google.golang.org/grpc v1.70.0 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
