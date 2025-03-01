@@ -52,7 +52,7 @@ func NewOTP(c *gin.Context) {
 	}
 
 	// Send OTP asynchronously
-	go helpers.SendOTP(c, body.PhoneNumber, otp.Code)
+	go helpers.SendOTP(body.PhoneNumber, otp.Code)
 
 	// Send response immediately
 	helpers.HandleSuccessData(c, "OTP created successfully", otp.KeyUID)

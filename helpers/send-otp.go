@@ -4,13 +4,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/twilio/twilio-go"
 	twilioApi "github.com/twilio/twilio-go/rest/api/v2010"
 )
 
-func SendOTP(c *gin.Context, phoneNumber string, otp string) {
+func SendOTP(phoneNumber string, otp string) {
 	client := twilio.NewRestClientWithParams(twilio.ClientParams{
 		Username: os.Getenv("TWILIO_ACCOUNT_SID"),
 		Password: os.Getenv("TWILIO_AUTH_TOKEN"),
