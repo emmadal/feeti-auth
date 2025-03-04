@@ -176,6 +176,7 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User, wallet *models.Wal
 			"face_id":      user.FaceID,
 			"finger_print": user.FingerPrint,
 			"premium":      user.Premium,
+			"device_token": user.DeviceToken,
 		},
 		"wallet": gin.H{
 			"id":       wallet.ID,
