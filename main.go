@@ -9,6 +9,7 @@ import (
 	"github.com/emmadal/feeti-backend-user/controllers"
 	"github.com/emmadal/feeti-backend-user/models"
 	"github.com/emmadal/feeti-module/cache"
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	nrgin "github.com/newrelic/go-agent/v3/integrations/nrgin"
@@ -30,6 +31,21 @@ func main() {
 
 	// Initialize Gin server
 	server := gin.Default()
+
+	// Gzip compression
+	server.Use(gzip.Gzip(gzip.BestCompression))
+
+	// Setup Security Headers
+	server.Use(func(c *gin.Context) {
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Content-Security-Policy", "default-src 'self'; connect-src *; font-src *; script-src-elem * 'unsafe-inline'; img-src * data:; style-src * 'unsafe-inline';")
+		c.Header("X-XSS-Protection", "1; mode=block")
+		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+		c.Header("Referrer-Policy", "strict-origin")
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Permissions-Policy", "geolocation=(),midi=(),sync-xhr=(),microphone=(),camera=(),magnetometer=(),gyroscope=(),fullscreen=(self),payment=()")
+		c.Next()
+	})
 
 	// Initialize New Relic
 	app, err := newrelic.NewApplication(
@@ -61,6 +77,7 @@ func main() {
 		Addr:         os.Getenv("PORT"),
 		WriteTimeout: 10 * time.Second,
 		ReadTimeout:  10 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// v1 routes

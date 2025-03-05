@@ -9,5 +9,12 @@ import (
 
 // HealthCheck handler to check health of the server
 func HealthCheck(c *gin.Context) {
-	c.SecureJSON(http.StatusOK, gin.H{"status": "ok", "message": "Server is healthy", "timestamp": time.Now().Unix(), "Date": time.Now().String()})
+	startTime := time.Now()
+
+	c.SecureJSON(http.StatusOK, gin.H{
+		"status":    "ok",
+		"message":   "Server is healthy",
+		"timestamp": time.Now().Format(time.RFC3339),
+		"uptime":    time.Since(startTime).String(),
+	})
 }
