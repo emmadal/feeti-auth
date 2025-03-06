@@ -33,6 +33,7 @@ jobs:
           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
           DB_NAME=${{ secrets.DB_NAME }}
           DB_PORT=${{ secrets.DB_PORT }}
+          HOST=${{ secrets.HOST }}
           NEW_RELIC_LICENSE_KEY=${{ secrets.NEW_RELIC_LICENSE_KEY }}
           GIN_MODE=${{ secrets.GIN_MODE }}
           TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
@@ -61,6 +62,7 @@ jobs:
             --build-arg DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
             --build-arg DB_NAME="${{ secrets.DB_NAME }}" \
             --build-arg DB_PORT="${{ secrets.DB_PORT }}" \
+            --build-arg HOST="${{ secrets.HOST }}" \
             --build-arg NEW_RELIC_LICENSE_KEY="${{ secrets.NEW_RELIC_LICENSE_KEY }}" \
             --build-arg GIN_MODE="${{ secrets.GIN_MODE }}" \
             --build-arg TWILIO_ACCOUNT_SID="${{ secrets.TWILIO_ACCOUNT_SID }}" \
