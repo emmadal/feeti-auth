@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -70,6 +71,15 @@ type UpdatePin struct {
 	NewPin      string `json:"new_pin" binding:"required,len=4,numeric,min=4,max=4"`
 	CodeOTP     string `json:"code_otp" binding:"required,len=5,numeric,min=5,max=5"`
 	KeyUID      string `json:"key_uid" binding:"required,uuid"`
+}
+
+// UpdateProfile is the struct for updating the profile
+type Profile struct {
+	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
+	Email       string `json:"email"`
+	Photo       string `json:"photo"`
+	FaceID      bool   `json:"face_id"`
+	FingerPrint bool   `json:"finger_print"`
 }
 
 // UpdateUserPin updates the pin of a user
@@ -170,7 +180,7 @@ func (user User) CreateUser(ctx context.Context) (*User, *Wallet, error) {
 // GetUserByPhoneNumber find user by phone number
 func GetUserByPhoneNumber(ctx context.Context, phone string) (*User, error) {
 	var user User
-	err := DB.WithContext(ctx).Select("id", "first_name", "last_name", "photo", "phone_number", "pin", "quota", "locked", "device_token", "email", "face_id", "finger_print", "premium").
+	err := DB.WithContext(ctx).Select("id", "first_name", "last_name", "photo", "phone_number", "pin", "quota", "locked", "device_token", "face_id", "finger_print", "premium").
 		Where("phone_number = ? AND is_active = ? AND locked = ?", phone, true, false).
 		First(&user).Error
 
@@ -178,7 +188,7 @@ func GetUserByPhoneNumber(ctx context.Context, phone string) (*User, error) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("No user found")
 		}
-		return nil, fmt.Errorf("database error: %w", err)
+		return nil, fmt.Errorf("Unable to retrieve user data")
 	}
 	return &user, nil
 }
@@ -197,7 +207,7 @@ func CheckUserByPhone(ctx context.Context, phone string) (bool, error) {
 			return false, nil
 		}
 		// Other database error occurred
-		return false, fmt.Errorf("database error checking user: %w", result.Error)
+		return false, fmt.Errorf("something went wrong while checking user")
 	}
 
 	// User exists
@@ -213,7 +223,7 @@ func GetUserAndWalletByPhone(ctx context.Context, phone string) (*User, *Wallet,
 
 	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Fetch user data
-		if err := tx.Select("id", "first_name", "last_name", "photo", "phone_number", "email", "pin", "quota", "locked", "device_token", "face_id", "finger_print", "premium").
+		if err := tx.Select("id", "first_name", "last_name", "photo", "phone_number", "pin", "quota", "locked", "device_token", "face_id", "finger_print", "premium").
 			Where("phone_number = ? AND is_active = ?", phone, true).
 			First(&user).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -254,4 +264,37 @@ func (user User) UpdateDeviceToken(ctx context.Context) error {
 		return nil
 	})
 	return nil
+}
+
+// UpdateProfile updates user profile
+func (user Profile) UpdateProfile(ctx context.Context) (*User, error) {
+	var updatedUser User
+
+	// Start the transaction
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Find the user and lock for update
+		if err := tx.Where("phone_number = ? AND is_active = ?", user.PhoneNumber, true).
+			First(&updatedUser).Error; err != nil {
+			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
+			return fmt.Errorf("User not found or inactive")
+		}
+
+		// Update only specific fields
+		err := tx.Model(&updatedUser).Select("email", "photo", "face_id", "finger_print").Updates(user).Error
+		if err != nil {
+			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
+			return fmt.Errorf("Failed to update user profile")
+		}
+		// return nil will commit the whole transaction
+		return nil
+	})
+
+	if err != nil {
+		// Return the transaction error
+		logrus.WithFields(logrus.Fields{"error": err}).Error(err)
+		return nil, fmt.Errorf("Something went wrong while updating user profile")
+	}
+
+	// Return updated user
+	return &updatedUser, nil
 }

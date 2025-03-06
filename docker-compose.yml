@@ -3,23 +3,32 @@ services:
   backend:
     image: backend-user:${TAG}
     container_name: backend-user
-    hostname: backend-user-{1..4}
+    hostname: backend-user-{{.Task.Slot}} # Ensures unique hostnames for replicas
     deploy:
-      replicas: 4
+      replicas: 5
       restart_policy:
         condition: on-failure
       update_config:
         parallelism: 2
         delay: 10s
         order: start-first
+      rollback_config:
+        parallelism: 2
+        delay: 10s
+        order: start-first
       resources:
         limits:
-          cpus: '0.50'
+          cpus: '0.70'
           memory: 512M
         reservations:
           cpus: '0.25'
           memory: 256M
       endpoint_mode: vip
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     ports:
       - target: 4000
         published: 4000

@@ -130,7 +130,7 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User, wallet *models.Wal
 	// Generate JWT token
 	token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
 	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Failed to verify token", err)
+		helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
 		return
 	}
 
@@ -163,16 +163,18 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User, wallet *models.Wal
 	user.Quota = 0
 	go cachedLoginData(user, wallet)
 
+	// Set cookie
+	domain := os.Getenv("HOST")
+	c.SetCookie("token", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, false, true)
+
 	// Return success response
 	helpers.HandleSuccessData(c, "Login successful", map[string]interface{}{
-		"token": token,
 		"user": gin.H{
 			"id":           user.ID,
 			"phone_number": user.PhoneNumber,
 			"first_name":   user.FirstName,
 			"last_name":    user.LastName,
 			"photo":        user.Photo,
-			"email":        user.Email,
 			"face_id":      user.FaceID,
 			"finger_print": user.FingerPrint,
 			"premium":      user.Premium,

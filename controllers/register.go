@@ -74,10 +74,9 @@ func Register(c *gin.Context) {
 	helpers.HandleSuccessData(c, "User registered successfully", gin.H{
 		"user": gin.H{
 			"id":           user.ID,
+			"phone_number": user.PhoneNumber,
 			"first_name":   user.FirstName,
 			"last_name":    user.LastName,
-			"email":        user.Email,
-			"phone_number": user.PhoneNumber,
 			"photo":        user.Photo,
 			"face_id":      user.FaceID,
 			"finger_print": user.FingerPrint,

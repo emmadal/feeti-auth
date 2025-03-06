@@ -14,12 +14,13 @@ import (
 	"github.com/joho/godotenv"
 	nrgin "github.com/newrelic/go-agent/v3/integrations/nrgin"
 	"github.com/newrelic/go-agent/v3/newrelic"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
 	// Load environment variables
 	if err := godotenv.Load(); err != nil {
-		log.Fatalln("Error loading .env file")
+		logrus.WithFields(logrus.Fields{"warning": err}).Error("No .env file found")
 	}
 
 	mode := os.Getenv("GIN_MODE")
@@ -37,13 +38,27 @@ func main() {
 
 	// Setup Security Headers
 	server.Use(func(c *gin.Context) {
+		// Prevents clickjacking attacks
 		c.Header("X-Frame-Options", "DENY")
-		c.Header("Content-Security-Policy", "default-src 'self'; connect-src *; font-src *; script-src-elem * 'unsafe-inline'; img-src * data:; style-src * 'unsafe-inline';")
+
+		// Enforces strict Content Security Policy
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+
+		// Protects against reflected XSS attacks
 		c.Header("X-XSS-Protection", "1; mode=block")
+
+		// Enforces HTTPS for a year with preload enabled
 		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
-		c.Header("Referrer-Policy", "strict-origin")
+
+		// Restricts the referrer header for better privacy
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+
+		// Prevents MIME-type sniffing
 		c.Header("X-Content-Type-Options", "nosniff")
-		c.Header("Permissions-Policy", "geolocation=(),midi=(),sync-xhr=(),microphone=(),camera=(),magnetometer=(),gyroscope=(),fullscreen=(self),payment=()")
+
+		// Restricts browser features to reduce the attack surface
+		c.Header("Permissions-Policy", "geolocation=(), midi=(), sync-xhr=(), microphone=(), camera=(), magnetometer=(), gyroscope=(), fullscreen=(self), payment=()")
+
 		c.Next()
 	})
 
@@ -55,7 +70,7 @@ func main() {
 		newrelic.ConfigAppLogForwardingEnabled(true),
 	)
 	if nil != err {
-		log.Fatalln(err)
+		logrus.WithFields(logrus.Fields{"warning": err}).Warning("No newrelic instance found")
 	}
 	server.Use(nrgin.Middleware(app))
 
@@ -68,7 +83,7 @@ func main() {
 	// Redis connection
 	err = cache.InitRedis()
 	if err != nil {
-		log.Fatalln(err)
+		logrus.WithFields(logrus.Fields{"warning": err}).Warning("No redis instance found")
 	}
 
 	// initialize server
@@ -89,6 +104,7 @@ func main() {
 	v1.PUT("/update-pin", controllers.UpdatePin)
 	v1.POST("/user", controllers.GetUser)
 	v1.GET("/health", controllers.HealthCheck)
+	v1.PUT("/update-profile", controllers.UpdateProfile)
 
 	// start server
 	log.Printf("Server is running on port %s", os.Getenv("PORT"))
