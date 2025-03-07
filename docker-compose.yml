@@ -12,13 +12,9 @@ services:
         parallelism: 2
         delay: 10s
         order: start-first
-      rollback_config:
-        parallelism: 2
-        delay: 10s
-        order: start-first
       resources:
         limits:
-          cpus: '0.70'
+          cpus: '0.50'
           memory: 512M
         reservations:
           cpus: '0.25'
