@@ -7,6 +7,9 @@
 *.dll
 *.so
 *.dylib
+*.pprof
+*.workspace
+.pocs/
 
 # Test binary, built with `go test -c`
 *.test
@@ -29,3 +32,11 @@ bin/
 build/
 dist/
 api_request/
+.DS_Store
+.vscode/
+.qodo/
+.idea/
+
+# Dependencies
+/vendor/
+vendor/

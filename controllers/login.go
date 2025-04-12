@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
@@ -14,6 +13,7 @@ import (
 	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
 
 const MaxLoginAttempts = 3
@@ -21,18 +21,7 @@ const MaxLoginAttempts = 3
 // Login handler to sign in user
 func Login(c *gin.Context) {
 	var body models.UserLogin
-
-	// Recover from panic
-	defer func() {
-		if r := recover(); r != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
-			return
-		}
-	}()
-
-	// Create a context with timeout (5s)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := c.Request.Context()
 
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -47,7 +36,7 @@ func Login(c *gin.Context) {
 			cachedUser.DeviceToken = body.DeviceToken
 		}
 		// Check if the user is locked and quota exceeded
-		if cachedUser.Locked && cachedUser.Quota >= MaxLoginAttempts {
+		if cachedUser.Locked || cachedUser.Quota >= MaxLoginAttempts {
 			helpers.HandleError(c, http.StatusUnauthorized, "Account locked. Login attempts exceeded. Please contact support", nil)
 			return
 		}
@@ -63,12 +52,12 @@ func Login(c *gin.Context) {
 	// Otherwise, fetch user and wallet from database
 	user, wallet, err := models.GetUserAndWalletByPhone(ctx, body.PhoneNumber)
 	if err != nil {
-		helpers.HandleError(c, http.StatusNotFound, err.Error(), err)
+		helpers.HandleError(c, http.StatusNotFound, "User not found", err)
 		return
 	}
 
 	// Check if the user is locked and quota exceeded
-	if user.Locked && user.Quota >= MaxLoginAttempts {
+	if user.Locked || user.Quota >= MaxLoginAttempts {
 		helpers.HandleError(c, http.StatusUnauthorized, "Your account has been locked due to many failed login attempts", nil)
 		return
 	}
@@ -86,47 +75,43 @@ func Login(c *gin.Context) {
 // Optimized getCacheData using WaitGroup
 func getCacheData(ctx context.Context, phoneNumber string) (*models.User, *models.Wallet, error) {
 	userKey, walletKey := getCacheKeys(phoneNumber)
+	g, ctx := errgroup.WithContext(ctx)
 
-	var userData models.User
-	var walletData models.Wallet
-	var errUser, errWallet error
+	var (
+		user   *models.User
+		wallet *models.Wallet
+	)
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	// Fetch user data
-	go func() {
-		defer wg.Done()
+	g.Go(func() error {
 		u, err := cache.GetRedisData[models.User](ctx, userKey)
-		if err == nil {
-			userData = u
-		} else {
-			errUser = err
+		if err != nil {
+			return err
 		}
-	}()
+		user = &u
+		return nil
+	})
 
-	// Fetch wallet data
-	go func() {
-		defer wg.Done()
+	g.Go(func() error {
 		w, err := cache.GetRedisData[models.Wallet](ctx, walletKey)
-		if err == nil {
-			walletData = w
-		} else {
-			errWallet = err
+		if err != nil {
+			return err
 		}
-	}()
+		wallet = &w
+		return nil
+	})
 
-	wg.Wait()
-
-	if errUser != nil && errWallet != nil {
-		return nil, nil, fmt.Errorf("failed to fetch cache data: user: %v, wallet: %v", errUser, errWallet)
+	if err := g.Wait(); err != nil {
+		return nil, nil, err
 	}
 
-	return &userData, &walletData, nil
+	return user, wallet, nil
 }
 
 // Optimized handleSuccessfulLogin with Redis Pipelining
 func handleSuccessfulLogin(c *gin.Context, user *models.User, wallet *models.Wallet, deviceToken string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
 	// Generate JWT token
 	token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
 	if err != nil {
@@ -136,26 +121,16 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User, wallet *models.Wal
 
 	// Reset user quota if needed to update database
 	if user.Quota > 0 {
-		go func() {
-			bgCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-
-			if err := user.ResetUserQuota(bgCtx); err != nil {
-				logrus.WithFields(logrus.Fields{"error": err, "user_id": user.ID}).Error("Failed to reset user quota")
-			}
-		}()
+		if err := user.ResetUserQuota(ctx); err != nil {
+			logrus.WithFields(logrus.Fields{"error": err, "user_id": user.ID}).Error("Failed to reset user quota")
+		}
 	}
 
 	// Update device token only if changed
 	if user.DeviceToken != deviceToken {
-		go func() {
-			bgCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-
-			if err := user.UpdateDeviceToken(bgCtx); err != nil {
-				logrus.WithFields(logrus.Fields{"error": err}).Error("Failed to update device token")
-			}
-		}()
+		if err := user.UpdateDeviceToken(ctx); err != nil {
+			logrus.WithFields(logrus.Fields{"error": err}).Error("Failed to update device token")
+		}
 		user.DeviceToken = deviceToken
 	}
 
@@ -165,10 +140,11 @@ func handleSuccessfulLogin(c *gin.Context, user *models.User, wallet *models.Wal
 
 	// Set cookie
 	domain := os.Getenv("HOST")
-	c.SetCookie("token", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, false, true)
+	secure := os.Getenv("GIN_MODE") == "release"
+	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, secure, true)
 
 	// Return success response
-	helpers.HandleSuccessData(c, "Login successful", map[string]interface{}{
+	helpers.HandleSuccessData(c, "Login successful", map[string]any{
 		"user": gin.H{
 			"id":           user.ID,
 			"phone_number": user.PhoneNumber,
@@ -201,6 +177,7 @@ func handleFailedLogin(c *gin.Context, ctx context.Context, user *models.User, w
 	// Lock the account if quota exceeds the limit
 	if user.Quota == MaxLoginAttempts && !user.Locked {
 		user.Locked = true
+		wallet.IsActive = false
 		go helpers.SmsAccountLocked(user.PhoneNumber) // Send SMS to the user
 		if err := user.LockUser(ctx); err != nil {
 			helpers.HandleError(c, http.StatusInternalServerError, "Failed to lock user account", err)
@@ -212,7 +189,7 @@ func handleFailedLogin(c *gin.Context, ctx context.Context, user *models.User, w
 	go cachedLoginData(user, wallet)
 
 	// Return error
-	helpers.HandleError(c, http.StatusUnauthorized, "Invalid phone number or PIN", nil)
+	helpers.HandleError(c, http.StatusUnauthorized, "Invalid credentials", nil)
 }
 
 func getCacheKeys(phone string) (string, string) {

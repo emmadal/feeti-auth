@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -64,7 +65,7 @@ func (otp Otp) InsertOTP(ctx context.Context) error {
 
 // UpdateOTP update the OTP
 func (otp Otp) UpdateOTP(ctx context.Context) error {
-	_ = DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// do some database operations in the transaction
 		err := tx.Model(&otp).Where("is_used = ? AND phone_number = ? AND key_uid = ? AND code = ?", false, otp.PhoneNumber, otp.KeyUID, otp.Code).Update("is_used", true).Error
 
@@ -75,6 +76,11 @@ func (otp Otp) UpdateOTP(ctx context.Context) error {
 		// return nil will commit the whole transaction
 		return nil
 	})
+	// Return the transaction error
+	if err != nil {
+		logrus.WithFields(logrus.Fields{"error": err}).Error(err)
+		return fmt.Errorf("Something went wrong while updating OTP")
+	}
 	return nil
 }
 

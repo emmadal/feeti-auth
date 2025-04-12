@@ -19,18 +19,7 @@ type bodyStruct struct {
 // GetUser gets a user by phone number
 func GetUser(c *gin.Context) {
 	var body bodyStruct
-
-	// Recover from panic
-	defer func() {
-		if r := recover(); r != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
-			return
-		}
-	}()
-
-	// Create a context with timeout (default: 5s)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := c.Request.Context()
 
 	// Validate request body
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -41,7 +30,7 @@ func GetUser(c *gin.Context) {
 	// Attempt to get user from cache
 	user, wallet, err := getCacheData(ctx, body.PhoneNumber)
 	if err == nil {
-		helpers.HandleSuccessData(c, "User found (cache)", formatUserResponse(user, wallet))
+		helpers.HandleSuccessData(c, "User found", formatUserResponse(user, wallet))
 		return
 	}
 	logrus.WithField("phone_number", body.PhoneNumber).Warn("User not found in cache, querying database")
@@ -62,18 +51,18 @@ func GetUser(c *gin.Context) {
 }
 
 // formatUserResponse formats user and wallet data for response
-func formatUserResponse(user *models.User, wallet *models.Wallet) map[string]interface{} {
-	return map[string]interface{}{
+func formatUserResponse(user *models.User, wallet *models.Wallet) map[string]any {
+	return map[string]any{
 		"user": gin.H{
 			"id":           user.ID,
 			"phone_number": user.PhoneNumber,
 			"first_name":   user.FirstName,
 			"last_name":    user.LastName,
 			"photo":        user.Photo,
-			"email":        user.Email,
 			"face_id":      user.FaceID,
 			"finger_print": user.FingerPrint,
 			"premium":      user.Premium,
+			"device_token": user.DeviceToken,
 		},
 		"wallet": gin.H{
 			"id":       wallet.ID,

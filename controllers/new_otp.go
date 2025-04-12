@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"context"
 	"net/http"
 	"time"
 
@@ -14,17 +13,7 @@ import (
 func NewOTP(c *gin.Context) {
 	var body models.NewOtp
 	var otp models.Otp
-
-	// Recover from panic
-	defer func() {
-		if r := recover(); r != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
-		}
-	}()
-
-	// Create a context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := c.Request.Context()
 
 	// Validate request
 	if err := c.ShouldBindJSON(&body); err != nil {

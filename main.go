@@ -1,14 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/emmadal/feeti-backend-user/controllers"
+	"github.com/emmadal/feeti-backend-user/middleware"
 	"github.com/emmadal/feeti-backend-user/models"
 	"github.com/emmadal/feeti-module/cache"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -33,37 +36,22 @@ func main() {
 	// Initialize Gin server
 	server := gin.Default()
 
-	// Gzip compression
+	// middleware
+	server.Use(cors.New(cors.Config{
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
+		AllowOrigins:     []string{fmt.Sprintf("http://%s", os.Getenv("HOST"))},
+		AllowFiles:       false,
+		AllowWildcard:    false,
+		AllowCredentials: true,
+	}))
+	server.Use(middleware.Helmet())
 	server.Use(gzip.Gzip(gzip.BestCompression))
-
-	// Setup Security Headers
-	server.Use(func(c *gin.Context) {
-		// Prevents clickjacking attacks
-		c.Header("X-Frame-Options", "DENY")
-
-		// Enforces strict Content Security Policy
-		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
-
-		// Protects against reflected XSS attacks
-		c.Header("X-XSS-Protection", "1; mode=block")
-
-		// Enforces HTTPS for a year with preload enabled
-		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
-
-		// Restricts the referrer header for better privacy
-		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-
-		// Prevents MIME-type sniffing
-		c.Header("X-Content-Type-Options", "nosniff")
-
-		// Restricts browser features to reduce the attack surface
-		c.Header("Permissions-Policy", "geolocation=(), midi=(), sync-xhr=(), microphone=(), camera=(), magnetometer=(), gyroscope=(), fullscreen=(self), payment=()")
-
-		c.Next()
-	})
+	server.Use(middleware.Timeout(5 * time.Second))
+	server.Use(middleware.Recover())
 
 	// Initialize New Relic
 	app, err := newrelic.NewApplication(
+		newrelic.ConfigEnabled(true),
 		newrelic.ConfigAppName("backend-user"),
 		newrelic.ConfigLicense(os.Getenv("NEW_RELIC_LICENSE_KEY")),
 		newrelic.ConfigCodeLevelMetricsEnabled(true),
@@ -81,18 +69,18 @@ func main() {
 	v1 := server.Group("/v1/api")
 
 	// Redis connection
-	err = cache.InitRedis()
-	if err != nil {
+	if err := cache.InitRedis(); err != nil {
 		logrus.WithFields(logrus.Fields{"warning": err}).Warning("No redis instance found")
 	}
 
 	// initialize server
 	s := &http.Server{
-		Handler:      server,
-		Addr:         os.Getenv("PORT"),
-		WriteTimeout: 10 * time.Second,
-		ReadTimeout:  10 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Handler:        server,
+		Addr:           os.Getenv("PORT"),
+		WriteTimeout:   10 * time.Second,
+		ReadTimeout:    10 * time.Second,
+		IdleTimeout:    30 * time.Second,
+		MaxHeaderBytes: 1 << 5,
 	}
 
 	// v1 routes
@@ -105,8 +93,10 @@ func main() {
 	v1.POST("/user", controllers.GetUser)
 	v1.GET("/health", controllers.HealthCheck)
 	v1.PUT("/update-profile", controllers.UpdateProfile)
+	v1.DELETE("/remove-account", controllers.RemoveAccount)
+	v1.DELETE("/signout", controllers.SignOut)
 
 	// start server
-	log.Printf("Server is running on port %s", os.Getenv("PORT"))
+	fmt.Fprintf(os.Stdout, "Server is running on port %s", os.Getenv("PORT"))
 	log.Fatalln(s.ListenAndServe())
 }

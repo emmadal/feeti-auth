@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
@@ -12,68 +11,54 @@ import (
 	"github.com/emmadal/feeti-module/cache"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
-
-func fetchUser(ctx context.Context, phoneNumber string) (*models.User, error) {
-	return models.GetUserByPhoneNumber(ctx, phoneNumber)
-}
-
-func fetchOTP(ctx context.Context, body models.UpdatePin) (*models.Otp, error) {
-	otp, err := models.GetOTPByCodeAndUID(ctx, body.PhoneNumber, body.CodeOTP, body.KeyUID)
-	if err != nil {
-		return nil, err
-	}
-	if otp.Code != body.CodeOTP {
-		return nil, fmt.Errorf("invalid code")
-	}
-	if body.PhoneNumber != otp.PhoneNumber {
-		return nil, fmt.Errorf("invalid phone number")
-	}
-	if otp.IsUsed || time.Now().After(otp.ExpiryAt) || otp.KeyUID != body.KeyUID {
-		return nil, fmt.Errorf("invalid or expired OTP")
-	}
-	return otp, nil
-}
 
 func UpdatePin(c *gin.Context) {
 	var body models.UpdatePin
+	var user *models.User
+	var otp *models.Otp
+
+	ctx := c.Request.Context()
+	g, _ := errgroup.WithContext(ctx)
+
 	if err := c.ShouldBindJSON(&body); err != nil {
 		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var wg sync.WaitGroup
-	var user *models.User
-	var otp *models.Otp
-	var userErr, otpErr error
-
 	// Fetch user and OTP concurrently
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		user, userErr = fetchUser(ctx, body.PhoneNumber)
-	}()
-	go func() {
-		defer wg.Done()
-		otp, otpErr = fetchOTP(ctx, body)
-	}()
-	wg.Wait()
+	g.Go(func() error {
+		localUser, err := models.GetUserByPhoneNumber(ctx, body.PhoneNumber)
+		if err == nil {
+			user = localUser
+		}
+		return err
+	})
 
-	if userErr != nil {
-		helpers.HandleError(c, http.StatusNotFound, "User not found", userErr)
-		return
-	}
-	if otpErr != nil {
-		helpers.HandleError(c, http.StatusBadRequest, otpErr.Error(), otpErr)
+	g.Go(func() error {
+		localOtp, err := models.GetOTPByCodeAndUID(ctx, body.PhoneNumber, body.CodeOTP, body.KeyUID)
+		if err != nil {
+			return err
+		}
+		if otp.Code != body.CodeOTP || body.PhoneNumber != otp.PhoneNumber {
+			return fmt.Errorf("Invalid code or Phone Number")
+		}
+		if otp.IsUsed || time.Now().After(otp.ExpiryAt) || otp.KeyUID != body.KeyUID {
+			return fmt.Errorf("Invalid or expired OTP")
+		}
+		otp = localOtp
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		helpers.HandleError(c, http.StatusInternalServerError, "Failed to fetch data", err)
 		return
 	}
 
 	// Verify old PIN
 	if !helpers.VerifyPassword(body.OldPin, user.Pin) {
-		helpers.HandleError(c, http.StatusUnauthorized, "Old PIN is incorrect", nil)
+		helpers.HandleError(c, http.StatusUnauthorized, "Invalid credentials", nil)
 		return
 	}
 
@@ -98,10 +83,18 @@ func UpdatePin(c *gin.Context) {
 	}
 
 	// Update cache
-	cacheKey := fmt.Sprintf("user:%s", user.PhoneNumber)
-	if err := cache.SetRedisData(ctx, cacheKey, user, 0); err != nil {
-		logrus.WithError(err).WithField("cacheKey", cacheKey).Error("Failed to update cache")
-	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		cacheKey := fmt.Sprintf("user:%s", user.PhoneNumber)
+		if err := cache.SetRedisData(ctx, cacheKey, user, 0); err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				logrus.WithField("cacheKey", cacheKey).Error("Redis timeout while updating cache")
+			} else {
+				logrus.WithError(err).WithField("cacheKey", cacheKey).Error("Failed to update cache")
+			}
+		}
+	}()
 
 	// Return success
 	helpers.HandleSuccess(c, "PIN updated successfully", nil)

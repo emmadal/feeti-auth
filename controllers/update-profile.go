@@ -16,18 +16,7 @@ import (
 // GetUser gets a user by phone number
 func UpdateProfile(c *gin.Context) {
 	var body models.Profile
-
-	// Recover from panic
-	defer func() {
-		if r := recover(); r != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
-			return
-		}
-	}()
-
-	// Create a context with timeout (default: 5s)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := c.Request.Context()
 
 	// Validate request body
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -36,11 +25,8 @@ func UpdateProfile(c *gin.Context) {
 	}
 
 	// search if user exists in DB
-	if exist, err := models.CheckUserByPhone(ctx, body.PhoneNumber); err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
-		return
-	} else if !exist {
-		helpers.HandleError(c, http.StatusNotFound, "User not found", nil)
+	if exist := models.CheckUserByPhone(ctx, body.PhoneNumber); !exist {
+		helpers.HandleError(c, http.StatusNotFound, "User data not found", nil)
 		return
 	}
 
@@ -63,13 +49,18 @@ func UpdateProfile(c *gin.Context) {
 		pipeline.Set(cacheCtx, userKey, marshalUser, 0)
 
 		if _, err := pipeline.Exec(cacheCtx); err != nil {
-			logrus.WithFields(logrus.Fields{"error": err, "userKey": userKey}).
-				Error(err.Error())
+			if cacheCtx.Err() == context.DeadlineExceeded {
+				logrus.WithFields(logrus.Fields{"userKey": userKey}).
+					Error("Redis timeout while updating user data")
+			} else {
+				logrus.WithFields(logrus.Fields{"error": err, "userKey": userKey}).
+					Error("Failed to update user cache")
+			}
 		}
 	}()
 
 	// Send success response
-	helpers.HandleSuccessData(c, "User profile updated successfully", map[string]interface{}{
+	helpers.HandleSuccessData(c, "User profile updated successfully", map[string]any{
 		"user": gin.H{
 			"id":           updatedUser.ID,
 			"phone_number": updatedUser.PhoneNumber,

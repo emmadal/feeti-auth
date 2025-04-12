@@ -18,29 +18,16 @@ import (
 // Register handles user registration
 func Register(c *gin.Context) {
 	var body models.User
-
-	// recover from panic to avoid server crash
-	defer func() {
-		if r := recover(); r != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Internal server error", nil)
-		}
-	}()
-
-	// Create a context with timeout (5s)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := c.Request.Context()
 
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
+		helpers.HandleError(c, http.StatusBadRequest, "Invalid request data", err)
 		return
 	}
 
 	// search if user exists in DB
-	if exists, err := models.CheckUserByPhone(ctx, body.PhoneNumber); err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Error checking user", err)
-		return
-	} else if exists {
+	if exists := models.CheckUserByPhone(ctx, body.PhoneNumber); exists {
 		helpers.HandleError(c, http.StatusConflict, "User already exists", nil)
 		return
 	}
@@ -63,15 +50,20 @@ func Register(c *gin.Context) {
 	// Generate JWT token
 	token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
 	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Failed to generate token", err)
+		helpers.HandleError(c, http.StatusInternalServerError, "Unable to generate token", err)
 		return
 	}
+
+	// Set cookie
+	domain := os.Getenv("HOST")
+	secure := os.Getenv("GIN_MODE") == "release"
+	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, secure, true)
 
 	// Update cache asynchronously
 	go cachedRegisterData(user, wallet)
 
 	// Send success response
-	helpers.HandleSuccessData(c, "User registered successfully", gin.H{
+	helpers.HandleSuccessData(c, "User registered successfully", map[string]any{
 		"user": gin.H{
 			"id":           user.ID,
 			"phone_number": user.PhoneNumber,
@@ -88,7 +80,6 @@ func Register(c *gin.Context) {
 			"currency": wallet.Currency,
 			"balance":  wallet.Balance,
 		},
-		"token": token,
 	})
 }
 
@@ -105,12 +96,18 @@ func cachedRegisterData(user *models.User, wallet *models.Wallet) {
 	pipeline.Set(cacheCtx, userKey, marshalUser, 0)
 	pipeline.Set(cacheCtx, walletKey, marshalWallet, 0)
 	if _, err := pipeline.Exec(cacheCtx); err != nil {
-		logrus.WithFields(logrus.Fields{"error": err, "userKey": userKey, "walletKey": walletKey}).Error("Failed to set data in pipeline")
+		if cacheCtx.Err() == context.DeadlineExceeded {
+			logrus.WithFields(logrus.Fields{"userKey": userKey, "walletKey": walletKey}).
+				Error("Redis timeout while setting user data")
+		} else {
+			logrus.WithFields(logrus.Fields{"error": err, "userKey": userKey, "walletKey": walletKey}).
+				Error("Failed to set user cache")
+		}
 	}
 }
 
 // marshalData marshals data to JSON
-func marshalData(data interface{}) []byte {
+func marshalData(data any) []byte {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"error": err}).Error("Failed to marshal data")
