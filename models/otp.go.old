@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -50,36 +49,42 @@ func (otp Otp) GetUserByPhone(ctx context.Context) (*User, error) {
 
 // InsertOTP insert a new OTP into the database
 func (otp Otp) InsertOTP(ctx context.Context) error {
-	_ = DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// do some database operations in the transaction (use 'tx' from this point)
-		otp.ExpiryAt = time.Now().Add(2 * time.Minute)
-		if err := tx.Create(&otp).Error; err != nil {
-			// return any error will rollback
-			return fmt.Errorf("Failed to create OTP")
-		}
-		// return nil will commit the whole transaction
-		return nil
-	})
+	_ = DB.WithContext(ctx).Transaction(
+		func(tx *gorm.DB) error {
+			// do some database operations in the transaction (use 'tx' from this point)
+			otp.ExpiryAt = time.Now().Add(2 * time.Minute)
+			if err := tx.Create(&otp).Error; err != nil {
+				// return any error will rollback
+				return fmt.Errorf("failed to create OTP")
+			}
+			// return nil will commit the whole transaction
+			return nil
+		},
+	)
 	return nil
 }
 
 // UpdateOTP update the OTP
 func (otp Otp) UpdateOTP(ctx context.Context) error {
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// do some database operations in the transaction
-		err := tx.Model(&otp).Where("is_used = ? AND phone_number = ? AND key_uid = ? AND code = ?", false, otp.PhoneNumber, otp.KeyUID, otp.Code).Update("is_used", true).Error
+	err := DB.WithContext(ctx).Transaction(
+		func(tx *gorm.DB) error {
+			// do some database operations in the transaction
+			err := tx.Model(&otp).Where(
+				"is_used = ? AND phone_number = ? AND key_uid = ? AND code = ?", false, otp.PhoneNumber, otp.KeyUID,
+				otp.Code,
+			).Update("is_used", true).Error
 
-		if err != nil {
-			// return any error will rollback
-			return fmt.Errorf("Failed to confirm OTP")
-		}
-		// return nil will commit the whole transaction
-		return nil
-	})
+			if err != nil {
+				// return any error will rollback
+				return fmt.Errorf("failed to confirm OTP")
+			}
+			// return nil will commit the whole transaction
+			return nil
+		},
+	)
 	// Return the transaction error
 	if err != nil {
-		logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-		return fmt.Errorf("Something went wrong while updating OTP")
+		return fmt.Errorf("something went wrong while updating OTP")
 	}
 	return nil
 }
@@ -108,10 +113,12 @@ func (ch CheckOtp) GetOTP(ctx context.Context) (*Otp, error) {
 // GetOTPByCodeAndUID find OTP by code and uid
 func GetOTPByCodeAndUID(ctx context.Context, phone, code, uid string) (*Otp, error) {
 	var otp Otp
-	err := DB.WithContext(ctx).Select("expiry_at", "is_used", "code", "phone_number", "key_uid").Where("phone_number = ? AND key_uid = ? AND code = ?", phone, uid, code).First(&otp).Error
+	err := DB.WithContext(ctx).Select(
+		"expiry_at", "is_used", "code", "phone_number", "key_uid",
+	).Where("phone_number = ? AND key_uid = ? AND code = ?", phone, uid, code).First(&otp).Error
 
 	if err != nil {
-		return nil, fmt.Errorf("No OTP found")
+		return nil, fmt.Errorf("no OTP found")
 	}
 	return &otp, nil
 }
