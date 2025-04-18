@@ -28,5 +28,5 @@ func SignOut(c *gin.Context) {
 	c.SetCookie("ftk", "", -1, "/", os.Getenv("HOST"), secure, true)
 
 	// Return success response
-	helpers.HandleSuccess(c, "Successfully signed out", nil)
+	helpers.HandleSuccess(c, "Successfully signed out")
 }
