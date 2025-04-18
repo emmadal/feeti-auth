@@ -1,42 +1,44 @@
 package models
 
 import (
-	"fmt"
+	"context"
 	"log"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 	"os"
 	"sync"
-
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
-var DB *gorm.DB
+var (
+	//DB   *pgx.Conn
+	DB   *pgxpool.Pool
+	once sync.Once
+)
 
-// DBConnect connects to the database
 func DBConnect() {
-	once := sync.Once{}
-	once.Do(func() {
-		host := os.Getenv("DB_HOST")
-		user := os.Getenv("DB_USER")
-		password := os.Getenv("DB_PASSWORD")
-		dbname := os.Getenv("DB_NAME")
-		port := "5432"
 
-		dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=GMT", host, user, password, dbname, port)
+	once.Do(
+		func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			conn, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+			if err != nil {
+				log.Fatalf("Unable to connect to database: %v\n", err)
+			}
 
-		result, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-			TranslateError:         true,
-			SkipDefaultTransaction: true,
-			PrepareStmt:            true,
-		})
+			// Assign connection to global DB variable before using it
+			DB = conn
 
-		if err != nil {
-			log.Fatalln(err)
-		}
+			// Ping the database to ensure the connection is valid
+			if err := conn.Ping(context.Background()); err != nil {
+				log.Fatalf("Unable to connect to database: %v\n", err)
+			}
 
-		if err := result.AutoMigrate(&User{}, &Otp{}, &Wallet{}); err != nil {
-			log.Fatalln(err)
-		}
-		DB = result
-	})
+			// Create tables after connection is established and assigned to DB
+			if err := createTables(); err != nil {
+				log.Fatalf("Unable to create tables: %v\n", err)
+			}
+		},
+	)
 }
