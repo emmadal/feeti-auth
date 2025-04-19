@@ -21,20 +21,10 @@ jobs:
         run: |
           cat <<EOF > .env
           PORT=${{ secrets.PORT }}
-          SMS_JWT=${{ secrets.SMS_JWT }}
-          REDIS_HOST=${{ secrets.REDIS_HOST }}
-          REDIS_PORT=${{ secrets.REDIS_PORT }}
-          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
-          REDIS_USERNAME=${{ secrets.REDIS_USERNAME }}
           JWT_SECRET=${{ secrets.JWT_SECRET }}
-          SMS_API_URL=${{ secrets.SMS_API_URL }}
-          DB_HOST=${{ secrets.DB_HOST }}
-          DB_USER=${{ secrets.DB_USER }}
-          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-          DB_NAME=${{ secrets.DB_NAME }}
-          DB_PORT=${{ secrets.DB_PORT }}
           HOST=${{ secrets.HOST }}
           NEW_RELIC_LICENSE_KEY=${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
           GIN_MODE=${{ secrets.GIN_MODE }}
           TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
           TWILIO_AUTH_TOKEN=${{ secrets.TWILIO_AUTH_TOKEN }}
@@ -50,21 +40,11 @@ jobs:
         run: |
           docker buildx build \
             --build-arg PORT="${{ secrets.PORT }}" \
-            --build-arg SMS_JWT="${{ secrets.SMS_JWT }}" \
-            --build-arg REDIS_HOST="${{ secrets.REDIS_HOST }}" \
-            --build-arg REDIS_PORT="${{ secrets.REDIS_PORT }}" \
-            --build-arg REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
-            --build-arg REDIS_USERNAME="${{ secrets.REDIS_USERNAME }}" \
             --build-arg JWT_SECRET="${{ secrets.JWT_SECRET }}" \
-            --build-arg SMS_API_URL="${{ secrets.SMS_API_URL }}" \
-            --build-arg DB_HOST="${{ secrets.DB_HOST }}" \
-            --build-arg DB_USER="${{ secrets.DB_USER }}" \
-            --build-arg DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-            --build-arg DB_NAME="${{ secrets.DB_NAME }}" \
-            --build-arg DB_PORT="${{ secrets.DB_PORT }}" \
             --build-arg HOST="${{ secrets.HOST }}" \
             --build-arg NEW_RELIC_LICENSE_KEY="${{ secrets.NEW_RELIC_LICENSE_KEY }}" \
             --build-arg GIN_MODE="${{ secrets.GIN_MODE }}" \
+            --build-arg DB_NAME="${{ secrets.DATABASE_URL }}" \
             --build-arg TWILIO_ACCOUNT_SID="${{ secrets.TWILIO_ACCOUNT_SID }}" \
             --build-arg TWILIO_AUTH_TOKEN="${{ secrets.TWILIO_AUTH_TOKEN }}" \
             -t backend-user:${{ github.run_number }} .

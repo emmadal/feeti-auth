@@ -3,6 +3,9 @@
 /pkg
 /build
 /cache
+/vendor
+benchmark/
+/api_request
 
 # Ignore the compiled binary (if present in local)
 backenduser
@@ -32,6 +35,7 @@ yarn-error.log
 # Editor-specific files
 .vscode/
 .idea/
+.qodo/
 .DS_Store
 .github/ # GitHub specific files
 .commitlnt/ # Commitlint configuration
