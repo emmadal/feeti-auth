@@ -2,12 +2,11 @@ package models
 
 import (
 	"context"
+	"database/sql"
 	"errors"
-	"fmt"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"time"
-
-	"github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 )
 
 // UserLogin is the struct for user login
@@ -19,34 +18,29 @@ type UserLogin struct {
 
 // User is the struct for a user
 type User struct {
-	ID          int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	FirstName   string    `json:"first_name" gorm:"type:varchar(150);not null" binding:"required,alpha,min=3,max=150"`
-	LastName    string    `json:"last_name" gorm:"type:varchar(150);not null" binding:"required,alpha,min=3,max=150"`
-	Email       string    `json:"email" gorm:"type:varchar(150)"`
-	PhoneNumber string    `json:"phone_number" gorm:"type:varchar(15);uniqueIndex;not null" binding:"required,e164,min=11,max=14"`
-	DeviceToken string    `json:"device_token" gorm:"type:varchar(150);not null" binding:"required,min=10,max=100"`
-	Pin         string    `json:"pin" gorm:"type:varchar(150);not null" binding:"required,len=4,numeric,min=4,max=4"`
-	Quota       uint      `json:"quota" gorm:"type:bigint;default:0;not null"`
-	Locked      bool      `json:"locked" gorm:"type:boolean;default:false;not null"`
-	FaceID      bool      `json:"face_id" gorm:"type:boolean;default:false;not null"`
-	Premium     bool      `json:"premium" gorm:"type:boolean;default:false;not null"`
-	FingerPrint bool      `json:"finger_print" gorm:"type:boolean;default:false;not null"`
-	Photo       string    `json:"photo" gorm:"type:varchar(250)"`
-	IsActive    bool      `json:"is_active" gorm:"type:boolean;default:true;index;not null"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID          int64     `json:"id" db:"id,omitempty"`
+	FirstName   string    `json:"first_name" db:"first_name" binding:"required,alpha,min=3,max=100"`
+	LastName    string    `json:"last_name" db:"last_name" binding:"required,alpha,min=3,max=100"`
+	PhoneNumber string    `json:"phone_number" db:"phone_number" binding:"required,e164,min=11,max=14"`
+	DeviceToken string    `json:"device_token" db:"device_token" binding:"required,min=10,max=100"`
+	Pin         string    `json:"pin" db:"pin" binding:"required,len=4,numeric"`
+	Quota       uint      `json:"quota" db:"quota"`
+	Locked      bool      `json:"locked" db:"locked"`
+	Photo       string    `json:"photo" db:"photo,omitempty"`
+	IsActive    bool      `json:"is_active" db:"is_active"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at,omitempty"`
 }
 
 // Wallet is the struct for a wallet
 type Wallet struct {
-	ID        int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserID    int64     `json:"user_id" gorm:"type:bigint;not null;index" binding:"required,number,gt=0"`
-	User      User      `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
-	Balance   int64     `json:"balance" gorm:"type:bigint;default:0;not null"`
-	Currency  string    `json:"currency" gorm:"type:varchar(3);default:XAF;not null" binding:"alpha,oneof=XOF XAF"`
-	IsActive  bool      `json:"is_active" gorm:"type:boolean;default:true"`
-	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID        int64     `json:"id" db:"id,omitempty"`
+	UserID    int64     `json:"user_id" db:"user_id" binding:"required,number,gt=0"`
+	Balance   int64     `json:"balance" db:"balance"`
+	Currency  string    `json:"currency" db:"currency" binding:"alpha,oneof=XAF"`
+	IsActive  bool      `json:"is_active" db:"is_active"`
+	CreatedAt time.Time `json:"created_at" db:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at,omitempty"`
 }
 
 // Login is the struct for login
@@ -73,291 +67,347 @@ type UpdatePin struct {
 	KeyUID      string `json:"key_uid" binding:"required,uuid"`
 }
 
-// UpdateProfile is the struct for updating the profile
-type Profile struct {
-	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
-	Email       string `json:"email"`
-	Photo       string `json:"photo"`
-	FaceID      bool   `json:"face_id"`
-	FingerPrint bool   `json:"finger_print"`
-}
-
-// RemoveAccount is the struct for removing the account
-type RemoveProfile struct {
+// RemoveUserAccount is the struct for removing user account
+type RemoveUserAccount struct {
 	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
 	Pin         string `json:"pin" binding:"required,len=4,numeric,min=4,max=4"`
-	CodeOTP     string `json:"code_otp" binding:"required,len=5,numeric,min=5,max=5"`
-	KeyUID      string `json:"key_uid" binding:"required,uuid"`
+}
+
+type AuthResponse struct {
+	User   UserResponse   `json:"user"`
+	Wallet WalletResponse `json:"wallet"`
+}
+
+type UserResponse struct {
+	ID          int64  `json:"id"`
+	FirstName   string `json:"first_name"`
+	LastName    string `json:"last_name"`
+	PhoneNumber string `json:"phone_number"`
+	Photo       string `json:"photo"`
+	DeviceToken string `json:"device_token"`
+}
+
+type WalletResponse struct {
+	ID       int64  `json:"id"`
+	Currency string `json:"currency"`
+	Balance  int64  `json:"balance"`
 }
 
 // UpdateUserPin updates the pin of a user
-func (user User) UpdateUserPin(ctx context.Context) error {
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		err := tx.Model(&User{}).Where("phone_number = ? AND is_active = ? AND locked = ? AND quota = ?", user.PhoneNumber, true, false, 0).Update("pin", user.Pin).Error
-
-		if err != nil {
-			// return any error will rollback
-			return fmt.Errorf("Failed to update user pin")
-		}
-		// return nil will commit the whole transaction
-		return nil
-	})
-	// Return the transaction error
-	if err != nil {
-		logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-		return fmt.Errorf("Something went wrong while updating user pin")
-	}
-	return nil
-}
+//func (user *User) UpdateUserPin(ctx context.Context) error {
+//	err := DB.WithContext(ctx).Transaction(
+//		func(tx *gorm.DB) error {
+//			err := tx.Model(&User{}).Where(
+//				"phone_number = ? AND is_active = ? AND locked = ? AND quota = ?", user.PhoneNumber, true, false, 0,
+//			).Update("pin", user.Pin).Error
+//
+//			if err != nil {
+//				// return any error will rollback
+//				return fmt.Errorf("Failed to update user pin")
+//			}
+//			// return nil will commit the whole transaction
+//			return nil
+//		},
+//	)
+//	// Return the transaction error
+//	if err != nil {
+//		return fmt.Errorf("Something went wrong while updating user pin")
+//	}
+//	return nil
+//}
 
 // UpdateUserQuota updates the user data
-func (user User) UpdateUserQuota(ctx context.Context) error {
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		err := tx.Model(&User{}).Where("phone_number = ? AND is_active = ? AND locked = ? AND quota < ?", user.PhoneNumber, true, false, 3).Update("quota", gorm.Expr("quota + ?", 1)).Error
-		if err != nil {
-			// return any error will rollback
-			return fmt.Errorf("Failed to update quota")
-		}
-		// return nil will commit the whole transaction
-		return nil
-	})
-	// Return the transaction error
+func (user *User) UpdateUserQuota() error {
+	ctx := context.Background()
+	_, err := WithTransaction(
+		DB, func(tx pgx.Tx) (any, error) {
+			_, err := tx.Exec(
+				ctx, `UPDATE users SET quota = quota + 1 WHERE phone_number = $1 AND is_active = true 
+                AND locked = false AND quota < 3`, user.PhoneNumber,
+			)
+			return nil, err
+		},
+	)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-		return fmt.Errorf("Something went wrong while updating user quota")
+		return err
 	}
 	return nil
 }
 
 // LockUser locks a user account
-func (user User) LockUser(ctx context.Context) error {
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Lock user account
-		if err := tx.Model(&User{}).Where("phone_number = ? AND is_active = ? AND quota >= ?", user.PhoneNumber, true, 3).Update("locked", true).Error; err != nil {
-			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-			return fmt.Errorf("Failed to lock account")
-		}
-
-		// Lock user wallet
-		if err := tx.Model(&Wallet{}).Where("user_id = ? AND is_active = ?", user.ID, true).Update("is_active", false).Error; err != nil {
-			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-			return fmt.Errorf("Unable to lock user wallet")
-		}
-		// return nil will commit the whole transaction
-		return nil
-	})
-	// Return the transaction error
+func (user *User) LockUser() error {
+	ctx := context.Background()
+	_, err := WithTransaction(
+		DB, func(tx pgx.Tx) (any, error) {
+			_, err := tx.Exec(
+				ctx, "UPDATE users SET locked = $1 WHERE id = $2 AND is_active = true AND quota >= 3",
+				true, user.ID,
+			)
+			return nil, err
+		},
+	)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-		return fmt.Errorf("Something went wrong while locking user account")
+		return err
+	}
+	return nil
+}
+
+// LockWallet locks a user wallet
+func (user *User) LockWallet() error {
+	ctx := context.Background()
+	_, err := WithTransaction(
+		DB, func(tx pgx.Tx) (any, error) {
+			_, err := tx.Exec(
+				ctx, "UPDATE wallets SET is_active = $1 WHERE user_id = $2", false, user.ID,
+			)
+			return nil, err
+		},
+	)
+	if err != nil {
+		return err
 	}
 	return nil
 }
 
 // ResetUserQuota resets the user quota
-func (user User) ResetUserQuota(ctx context.Context) error {
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		err := tx.Model(&User{}).Where("phone_number = ? AND is_active = ? AND locked = ?", user.PhoneNumber, true, false).Update("quota", 0).Error
-
-		if err != nil {
-			// return any error will rollback
-			return fmt.Errorf("Failed to reset login attempts")
-		}
-
-		// return nil will commit the whole transaction
-		return nil
-	})
-	// Return the transaction error
+func (user *User) ResetUserQuota() error {
+	ctx := context.Background()
+	_, err := WithTransaction(
+		DB, func(tx pgx.Tx) (any, error) {
+			_, err := tx.Exec(
+				ctx,
+				"UPDATE users SET quota = $1 WHERE phone_number = $2 AND is_active = true",
+				0, user.PhoneNumber,
+			)
+			return nil, err
+		},
+	)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-		return fmt.Errorf("Something went wrong while resetting user quota")
+		return err
 	}
 	return nil
 }
 
-// CreateUser creates a new user
-func (user User) CreateUser(ctx context.Context) (*User, *Wallet, error) {
-	var createdUser User
-	var wallet Wallet
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Create the user
-		if err := tx.Create(&user).Error; err != nil {
-			if errors.Is(err, gorm.ErrDuplicatedKey) {
-				return fmt.Errorf("phone number already registered")
-			}
-			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-			return fmt.Errorf("failed to create user")
-		}
+// CreateWallet creates user wallet
+func (user *User) CreateWallet() (*Wallet, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
-		// Retrieve the created user within the same transaction
-		if err := tx.Model(&User{}).Where("id = ?", user.ID).First(&createdUser).Error; err != nil {
-			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-			return fmt.Errorf("failed to retrieve created user")
-		}
-
-		// create wallet for the user
-		wallet.UserID = createdUser.ID
-		if err := tx.Create(&wallet).Error; err != nil {
-			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-			return fmt.Errorf("failed to create wallet")
-		}
-
-		// retrieve created wallet
-		if err := tx.Select("id", "currency", "balance", "is_active").First(&wallet, "user_id = ?", createdUser.ID).Error; err != nil {
-			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-			return fmt.Errorf("failed to retrieve created wallet")
-		}
-
-		// return nil will commit the whole transaction
-		return nil
-	})
-
+	tx, err := DB.Begin(ctx)
 	if err != nil {
-		// Return the transaction error
-		logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-		return nil, nil, fmt.Errorf("Something went wrong while creating user account")
+		return nil, err
 	}
-	return &createdUser, &wallet, nil
+	defer tx.Rollback(ctx)
+
+	wallet := &Wallet{}
+
+	err = tx.QueryRow(
+		ctx,
+		`INSERT INTO wallets(user_id) VALUES ($1) RETURNING id, balance, currency`, user.ID,
+	).Scan(
+		&wallet.ID,
+		&wallet.Balance,
+		&wallet.Currency,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return wallet, nil
 }
 
 // CreateUser creates a new user
-func (user User) RemoveUser(ctx context.Context) error {
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (user *User) CreateUser() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
-		err := tx.Model(&user).Where("phone_number = ? AND is_active = ?", user.PhoneNumber, true).Select("IsActive", "Locked", "Quota").Updates(User{IsActive: false, Locked: true, Quota: 3}).Error
-		if err != nil {
-			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-			return fmt.Errorf("Unable to remove user account")
-		}
-
-		if err := tx.Model(&Wallet{}).Where("user_id = ? AND is_active = ?", user.ID, true).Update("is_active", false).Error; err != nil {
-			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-			return fmt.Errorf("Unable to remove user wallet")
-		}
-
-		// return nil will commit the whole transaction
-		return nil
-	})
-
-	// Return the transaction error
+	tx, err := DB.Begin(ctx)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-		return fmt.Errorf("Something went wrong while removing user account")
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	err = tx.QueryRow(
+		ctx,
+		`INSERT INTO users(first_name, last_name, phone_number, pin, device_token)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, first_name, last_name, phone_number, device_token`,
+		user.FirstName, user.LastName, user.PhoneNumber, user.Pin, user.DeviceToken,
+	).Scan(
+		&user.ID,
+		&user.FirstName,
+		&user.LastName,
+		&user.PhoneNumber,
+		&user.DeviceToken,
+	)
+	if err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// RemoveUserAndWallet deactivate user account
+func (user *User) RemoveUserAndWallet() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	tx, err := DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx) // no-op if already committed
+	}()
+
+	batch := &pgx.Batch{}
+	batch.Queue(`UPDATE users SET is_active = $1 WHERE id = $2`, false, user.ID)
+	batch.Queue(`UPDATE wallets SET is_active = $1 WHERE user_id = $2`, false, user.ID)
+
+	batchResults := tx.SendBatch(ctx, batch)
+
+	// Consume all batch results before continuing
+	for i := 0; i < 2; i++ {
+		if _, err := batchResults.Exec(); err != nil {
+			_ = batchResults.Close()
+			return err
+		}
+	}
+
+	// Now it's safe to close
+	if err := batchResults.Close(); err != nil {
+		return err
+	}
+
+	// Then commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 // GetUserByPhoneNumber find user by phone number
-func GetUserByPhoneNumber(ctx context.Context, phone string) (*User, error) {
+func GetUserByPhoneNumber(phone string) (*User, error) {
 	var user User
-	err := DB.WithContext(ctx).Select("id", "first_name", "last_name", "photo", "phone_number", "pin", "quota", "locked", "device_token", "face_id", "finger_print", "premium", "is_active").
-		Where("phone_number = ? AND is_active = ? AND locked = ?", phone, true, false).
-		First(&user).Error
-
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var photo sql.RawBytes
+	err := DB.QueryRow(
+		ctx,
+		`SELECT id, first_name, last_name, phone_number, pin, device_token, photo
+            FROM users WHERE phone_number = $1 AND is_active = $2`, phone, true,
+	).Scan(
+		&user.ID, &user.FirstName, &user.LastName, &user.PhoneNumber, &user.Pin, &user.DeviceToken,
+		&photo,
+	)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("No user found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, pgx.ErrNoRows
 		}
-		return nil, fmt.Errorf("Unable to retrieve user data")
+		return nil, err
 	}
 	return &user, nil
 }
 
 // CheckUserByPhone verify if a phone number exist
-func CheckUserByPhone(ctx context.Context, phone string) bool {
-	var user User
-	err := DB.WithContext(ctx).Where("phone_number = ?", phone).First(&user).Error
+func CheckUserByPhone(phone string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
-	return err == nil
+	var id int
+	err := DB.QueryRow(
+		ctx,
+		`SELECT id FROM users WHERE phone_number = $1 AND is_active = $2`,
+		phone, true,
+	).Scan(&id)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false // No user found
+		}
+		return false // Query failed for some reason
+	}
+
+	return true // User found
 }
 
 // GetUserAndWalletByPhone find user and wallet by phone number
-func GetUserAndWalletByPhone(ctx context.Context, phone string) (*User, *Wallet, error) {
-	var (
-		user   User
-		wallet Wallet
+func GetUserAndWalletByPhone(phone string, u *User, w *Wallet) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var photo sql.RawBytes
+	err := DB.QueryRow(
+		ctx,
+		`SELECT u.id, u.first_name, u.last_name, u.phone_number, u.device_token, u.pin, u.quota, u.locked, u.photo,
+            w.balance, w.currency, w.id FROM users u INNER JOIN wallets w ON w.user_id = u.id
+         WHERE u.phone_number = $1 AND u.is_active = true`,
+		phone,
+	).Scan(
+		&u.ID, &u.FirstName, &u.LastName, &u.PhoneNumber, &u.DeviceToken, &u.Pin, &u.Quota,
+		&u.Locked, &photo, &w.Balance, &w.Currency, &w.ID,
 	)
-
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Fetch user data
-		if err := tx.Select("id", "first_name", "last_name", "photo", "phone_number", "pin", "quota", "locked", "device_token", "face_id", "finger_print", "premium", "is_active").
-			Where("phone_number = ? AND is_active = ?", phone, true).
-			First(&user).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("user not found")
-			}
-			return fmt.Errorf("failed to fetch user")
-		}
-
-		// Fetch wallet data
-		if err := tx.Select("id", "currency", "balance", "is_active").
-			Where("user_id = ? AND is_active = ?", user.ID, true).
-			First(&wallet).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("wallet not found")
-			}
-			return fmt.Errorf("failed to fetch wallet")
-		}
-
-		return nil
-	})
-
 	if err != nil {
-		return nil, nil, err
-	}
-
-	return &user, &wallet, nil
-}
-
-// UpdateDeviceToken update user device token
-func (user User) UpdateDeviceToken(ctx context.Context) error {
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		err := tx.Model(&User{}).Where("phone_number = ? AND is_active = ?", user.PhoneNumber, true).Update("device_token", user.DeviceToken).Error
-		if err != nil {
-			// return any error will rollback
-			return fmt.Errorf("Failed to update device token")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
 		}
-		// return nil will commit the whole transaction
-		return nil
-	})
-	if err != nil {
-		// Return the transaction error
-		logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-		return fmt.Errorf("Something went wrong while updating user device token")
+		return err
 	}
 	return nil
 }
 
-// UpdateProfile updates user profile
-func (user Profile) UpdateProfile(ctx context.Context) (*User, error) {
-	var updatedUser User
-
-	// Start the transaction
-	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Find the user and lock for update
-		if err := tx.Where("phone_number = ? AND is_active = ?", user.PhoneNumber, true).
-			First(&updatedUser).Error; err != nil {
-			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-			return fmt.Errorf("User not found or inactive")
-		}
-
-		// Update only specific fields
-		err := tx.Model(&updatedUser).Select("email", "photo", "face_id", "finger_print").Updates(user).Error
-		if err != nil {
-			logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-			return fmt.Errorf("Failed to update user profile")
-		}
-		// return nil will commit the whole transaction
-		return nil
-	})
-
+// UpdateDeviceToken update user device token
+func (user *User) UpdateDeviceToken() error {
+	ctx := context.Background()
+	_, err := WithTransaction(
+		DB, func(tx pgx.Tx) (any, error) {
+			_, err := tx.Exec(
+				ctx, "UPDATE users SET device_token = $1 WHERE phone_number = $2 AND is_active = true",
+				user.DeviceToken, user.PhoneNumber,
+			)
+			return nil, err
+		},
+	)
 	if err != nil {
-		// Return the transaction error
-		logrus.WithFields(logrus.Fields{"error": err}).Error(err)
-		return nil, fmt.Errorf("Something went wrong while updating user profile")
+		return err
+	}
+	return nil
+}
+
+// WithTransaction is a function to create transaction
+func WithTransaction[T any](conn *pgxpool.Pool, fn func(tx pgx.Tx) (T, error)) (T, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	var zero T
+
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return zero, err
 	}
 
-	// Return updated user
-	return &updatedUser, nil
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback(ctx)
+			panic(p)
+		} else if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	result, err := fn(tx)
+	if err != nil {
+		return zero, err
+	}
+
+	err = tx.Commit(ctx)
+	return result, err
 }

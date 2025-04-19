@@ -3,7 +3,7 @@ package models
 import (
 	"context"
 	"errors"
-	"fmt"
+	"github.com/jackc/pgx/v5"
 	"time"
 )
 
@@ -32,123 +32,73 @@ type NewOtp struct {
 	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
 }
 
-// GetUserByPhone get a user by phone number
-func (otp Otp) GetUserByPhone(ctx context.Context) (*User, error) {
-	var user User
-	err := DB.WithContext(ctx).Select("id", "first_name", "last_name", "photo", "phone_number").
-		Where("phone_number = ? AND is_active = ?", otp.PhoneNumber, true).
-		First(&user).Error
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New("No user found")
-	}
-	return &user, nil
-}
-
 // InsertOTP insert a new OTP into the database
-func (otp *Otp) InsertOTP(ctx context.Context) error {
-	_ = DB.WithContext(ctx).Transaction(
-		func(tx *gorm.DB) error {
-			// do some database operations in the transaction (use 'tx' from this point)
-			otp.ExpiryAt = time.Now().Add(2 * time.Minute)
-			if err := tx.Create(&otp).Error; err != nil {
-				// return any error will rollback
-				return fmt.Errorf("failed to create OTP")
-			}
-			// return nil will commit the whole transaction
-			return nil
-		},
-	)
+func (otp *Otp) InsertOTP() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	tx, err := DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(
+		ctx,
+		`INSERT INTO otp(code, phone_number, key_uid, expiry_at) VALUES ($1, $2, $3, $4)`, otp.Code, otp.PhoneNumber,
+		otp.KeyUID, otp.ExpiryAt,
+	); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
 	return nil
-
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-    	defer cancel()
-
-    	tx, err := DB.Begin(ctx)
-    	if err != nil {
-    		return err
-    	}
-    	defer tx.Rollback(ctx)
-
-        otp.ExpiryAt = time.Now().Add(2 * time.Minute)
-    	err = tx.QueryRow(
-    		ctx,
-    		`INSERT INTO users(code, phone_number, key_uid) VALUES ($1, $2, $3)
-             RETURNING id, key_uid`,
-    		user.FirstName, user.LastName, user.PhoneNumber, user.Pin, user.DeviceToken,
-    	).Scan(
-    		&user.ID,
-    		&user.FirstName,
-    		&user.LastName,
-    		&user.PhoneNumber,
-    		&user.DeviceToken,
-    	)
-    	if err != nil {
-    		return err
-    	}
-
-    	if err := tx.Commit(ctx); err != nil {
-    		return err
-    	}
-
-    	return nil
 }
 
 // UpdateOTP update the OTP
-func (otp Otp) UpdateOTP(ctx context.Context) error {
-	err := DB.WithContext(ctx).Transaction(
-		func(tx *gorm.DB) error {
-			// do some database operations in the transaction
-			err := tx.Model(&otp).Where(
-				"is_used = ? AND phone_number = ? AND key_uid = ? AND code = ?", false, otp.PhoneNumber, otp.KeyUID,
-				otp.Code,
-			).Update("is_used", true).Error
+func (otp *Otp) UpdateOTP() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
-			if err != nil {
-				// return any error will rollback
-				return fmt.Errorf("failed to confirm OTP")
-			}
-			// return nil will commit the whole transaction
-			return nil
-		},
-	)
-	// Return the transaction error
+	tx, err := DB.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("something went wrong while updating OTP")
+		return err
 	}
+	defer tx.Rollback(ctx)
+
+	_, err = DB.Exec(
+		ctx, `UPDATE otp SET is_used = $1 WHERE code = $2 AND key_uid = $3 AND phone_number = $4`,
+		true, otp.Code, otp.KeyUID, otp.PhoneNumber,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // GetOTP find the OTP in the database
-func (ch CheckOtp) GetOTP(ctx context.Context) (*Otp, error) {
-	var otp Otp
+func (otp *Otp) GetOTP() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := DB.QueryRow(
+		ctx, "SELECT expiry_at, is_used FROM otp WHERE code = $1 AND phone_number = $2 AND key_uid = $3", otp.Code,
+		otp.PhoneNumber, otp.KeyUID,
+	).Scan(&otp.ExpiryAt, &otp.IsUsed)
 
-	// Use context with GORM for timeout support
-	err := DB.WithContext(ctx).
-		Select("expiry_at", "is_used", "code", "phone_number", "key_uid").
-		Where("phone_number = ? AND key_uid = ? AND code = ?", ch.PhoneNumber, ch.KeyUID, ch.Code).
-		First(&otp).Error
-
-	// Handle different error cases
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("OTP not found or invalid")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
 		}
-		return nil, fmt.Errorf("database error: %w", err)
+		return err
 	}
-
-	return &otp, nil
-}
-
-// GetOTPByCodeAndUID find OTP by code and uid
-func GetOTPByCodeAndUID(ctx context.Context, phone, code, uid string) (*Otp, error) {
-	var otp Otp
-	err := DB.WithContext(ctx).Select(
-		"expiry_at", "is_used", "code", "phone_number", "key_uid",
-	).Where("phone_number = ? AND key_uid = ? AND code = ?", phone, uid, code).First(&otp).Error
-
-	if err != nil {
-		return nil, fmt.Errorf("no OTP found")
-	}
-	return &otp, nil
+	return nil
 }
