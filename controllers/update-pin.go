@@ -1,8 +1,10 @@
 package controllers
 
 import (
+	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
@@ -44,12 +46,20 @@ func UpdatePin(c *gin.Context) {
 		return
 	}
 
-	// Delete cookie
+	//Generate JWT token
+	token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
+	if err != nil {
+		helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
+		return
+	}
+
+	// Replace old token with new one
+	domain := os.Getenv("HOST")
 	secure := os.Getenv("GIN_MODE") == "release"
-	c.SetCookie("ftk", "", -1, "/", os.Getenv("HOST"), secure, true)
+	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, secure, true)
 
 	go helpers.SendPinMessage(body.PhoneNumber)
 
 	// Return success
-	helpers.HandleSuccess(c, "PIN updated successfully")
+	helpers.HandleSuccess(c, "Your PIN has been updated. Please, do not share your password")
 }
