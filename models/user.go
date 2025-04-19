@@ -101,7 +101,9 @@ func (user *User) UpdateUserPin() error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	_, err = tx.Exec(
 		ctx,
@@ -200,7 +202,9 @@ func (user *User) CreateWallet() (*Wallet, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	wallet := &Wallet{}
 
@@ -232,7 +236,9 @@ func (user *User) CreateUser() error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	err = tx.QueryRow(
 		ctx,

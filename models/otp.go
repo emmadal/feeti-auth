@@ -41,7 +41,9 @@ func (otp *Otp) InsertOTP() error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	if _, err := tx.Exec(
 		ctx,
@@ -67,7 +69,9 @@ func (otp *Otp) UpdateOTP() error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	_, err = DB.Exec(
 		ctx, `UPDATE otp SET is_used = $1 WHERE code = $2 AND key_uid = $3 AND phone_number = $4`,

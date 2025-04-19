@@ -40,8 +40,6 @@ func Login(c *gin.Context) {
 
 	// Lock the account if quota exceeds the limit
 	if user.Quota == MaxLoginAttempts && !user.Locked {
-		go helpers.SmsAccountLocked(user.PhoneNumber) // Send SMS to the user
-
 		// lock user and wallet concurrently
 		group := errgroup.Group{}
 		group.Go(
