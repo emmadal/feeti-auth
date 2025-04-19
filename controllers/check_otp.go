@@ -10,8 +10,7 @@ import (
 )
 
 func CheckOTP(c *gin.Context) {
-	var body models.CheckOtp
-	ctx := c.Request.Context()
+	var body models.Otp
 
 	// Bind request body
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -19,29 +18,21 @@ func CheckOTP(c *gin.Context) {
 		return
 	}
 
-	// Fetch OTP (Pass context for timeout)
-	otp, err := body.GetOTP(ctx)
-	if err != nil {
+	if err := body.GetOTP(); err != nil {
 		helpers.HandleError(c, http.StatusInternalServerError, "OTP not found or invalid", err)
 		return
 	}
 
-	if otp.IsUsed {
-		helpers.HandleError(c, http.StatusForbidden, "OTP has already been used", nil)
-		return
-	}
-
-	if time.Now().After(otp.ExpiryAt) || otp.Code != body.Code || otp.KeyUID != body.KeyUID || otp.PhoneNumber != body.PhoneNumber {
-		helpers.HandleError(c, http.StatusForbidden, "Invalid OTP code", nil)
+	if time.Now().After(body.ExpiryAt) || body.IsUsed {
+		helpers.HandleError(c, http.StatusForbidden, "Expired OTP code", nil)
 		return
 	}
 
 	// Mark OTP as used BEFORE returning success
-	otp.IsUsed = true
-	if err := otp.UpdateOTP(ctx); err != nil {
+	if err := body.UpdateOTP(); err != nil {
 		helpers.HandleError(c, http.StatusInternalServerError, "Failed to update OTP", err)
 		return
 	}
 
-	helpers.HandleSuccess(c, "OTP validated successfully", nil)
+	helpers.HandleSuccess(c, "OTP validated successfully")
 }

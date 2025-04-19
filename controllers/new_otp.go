@@ -13,18 +13,17 @@ import (
 func NewOTP(c *gin.Context) {
 	var body models.NewOtp
 	var otp models.Otp
-	ctx := c.Request.Context()
 
 	// Validate request
 	if err := c.ShouldBindJSON(&body); err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "Invalid data or bad request", err)
+		helpers.HandleError(c, http.StatusBadRequest, "Invalid request data", err)
 		return
 	}
 
 	// Generate OTP
-	code := helpers.GenerateOTPCode(5)
-	if len(code) != 5 || code == "00000" {
-		helpers.HandleError(c, http.StatusInternalServerError, "Failed to generate OTP", nil)
+	code, err := helpers.GenerateOTPCode(5)
+	if err != nil || code == "00000" {
+		helpers.HandleError(c, http.StatusInternalServerError, "Error generating OTP", err)
 		return
 	}
 
@@ -32,10 +31,8 @@ func NewOTP(c *gin.Context) {
 	otp.KeyUID = uuid.NewString()
 	otp.Code = code
 	otp.PhoneNumber = body.PhoneNumber
-	otp.CreatedAt = time.Now() // Ensure expiry logic works
-
-	err := otp.InsertOTP(ctx)
-	if err != nil {
+	otp.ExpiryAt = time.Now().Add(2 * time.Minute)
+	if err := otp.InsertOTP(); err != nil {
 		helpers.HandleError(c, http.StatusInternalServerError, "Failed to create OTP", err)
 		return
 	}
@@ -44,5 +41,6 @@ func NewOTP(c *gin.Context) {
 	go helpers.SendOTP(body.PhoneNumber, otp.Code)
 
 	// Send response immediately
-	helpers.HandleSuccessData(c, "OTP created successfully", otp.KeyUID)
+	helpers.HandleSuccessData(c, "Code OTP created successfully", otp.KeyUID)
+
 }

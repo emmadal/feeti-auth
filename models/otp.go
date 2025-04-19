@@ -5,25 +5,23 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 // Otp is the struct for OTP in the database
 type Otp struct {
-	ID          int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	Code        string    `json:"code" gorm:"type:varchar(7);not null;index" binding:"required,min=5,max=5,numeric"`
-	IsUsed      bool      `json:"is_used" gorm:"type:boolean;not null;default:false"`
-	PhoneNumber string    `json:"phone_number" gorm:"type:varchar(15);not null;index" binding:"required,e164,min=11,max=14"`
-	KeyUID      string    `json:"key_uid" gorm:"type:varchar(100);not null;index" binding:"required,uuid"`
-	ExpiryAt    time.Time `json:"expiry_at" binding:"required"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID          int64     `json:"id" db:"id,omitempty"`
+	Code        string    `json:"code" db:"code" binding:"required,len=5,numeric"`
+	IsUsed      bool      `json:"is_used" db:"is_used"`
+	PhoneNumber string    `json:"phone_number" db:"phone_number" binding:"required,e164,min=11,max=14"`
+	KeyUID      string    `json:"key_uid" db:"key_uid" binding:"required,uuid"`
+	ExpiryAt    time.Time `json:"expiry_at" db:"expiry_at"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"created_at"`
 }
 
 // CheckOtp is the struct for checking the OTP
 type CheckOtp struct {
-	Code        string    `json:"code" binding:"required,min=5,max=5,numeric"`
+	Code        string    `json:"code" binding:"required,len=5,numeric"`
 	PhoneNumber string    `json:"phone_number" binding:"required,e164,min=11,max=14"`
 	KeyUID      string    `json:"key_uid" binding:"required,uuid"`
 	ExpiryAt    time.Time `json:"expiry_at"`
@@ -48,7 +46,7 @@ func (otp Otp) GetUserByPhone(ctx context.Context) (*User, error) {
 }
 
 // InsertOTP insert a new OTP into the database
-func (otp Otp) InsertOTP(ctx context.Context) error {
+func (otp *Otp) InsertOTP(ctx context.Context) error {
 	_ = DB.WithContext(ctx).Transaction(
 		func(tx *gorm.DB) error {
 			// do some database operations in the transaction (use 'tx' from this point)
@@ -62,6 +60,38 @@ func (otp Otp) InsertOTP(ctx context.Context) error {
 		},
 	)
 	return nil
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+    	defer cancel()
+
+    	tx, err := DB.Begin(ctx)
+    	if err != nil {
+    		return err
+    	}
+    	defer tx.Rollback(ctx)
+
+        otp.ExpiryAt = time.Now().Add(2 * time.Minute)
+    	err = tx.QueryRow(
+    		ctx,
+    		`INSERT INTO users(code, phone_number, key_uid) VALUES ($1, $2, $3)
+             RETURNING id, key_uid`,
+    		user.FirstName, user.LastName, user.PhoneNumber, user.Pin, user.DeviceToken,
+    	).Scan(
+    		&user.ID,
+    		&user.FirstName,
+    		&user.LastName,
+    		&user.PhoneNumber,
+    		&user.DeviceToken,
+    	)
+    	if err != nil {
+    		return err
+    	}
+
+    	if err := tx.Commit(ctx); err != nil {
+    		return err
+    	}
+
+    	return nil
 }
 
 // UpdateOTP update the OTP
