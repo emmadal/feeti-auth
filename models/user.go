@@ -12,7 +12,7 @@ import (
 // UserLogin is the struct for user login
 type UserLogin struct {
 	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
-	Pin         string `json:"pin" binding:"required,len=4,numeric,min=4,max=4"`
+	Pin         string `json:"pin" binding:"required,len=4,numeric"`
 	DeviceToken string `json:"device_token" binding:"required,min=10,max=100"`
 }
 
@@ -46,31 +46,30 @@ type Wallet struct {
 // Login is the struct for login
 type Login struct {
 	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
-	Pin         string `json:"pin" binding:"required,len=4,numeric,min=4,max=4"`
+	Pin         string `json:"pin" binding:"required,len=4,numeric"`
 	DeviceToken string `json:"device_token" binding:"required,min=10,max=100"`
 }
 
 // ResetPin is the struct for resetting the pin
 type ResetPin struct {
 	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
-	Pin         string `json:"pin" binding:"required,len=4,numeric,min=4,max=4"`
-	CodeOTP     string `json:"code_otp" binding:"required,len=5,numeric,min=5,max=5"`
+	Pin         string `json:"pin" binding:"required,len=4,numeric"`
+	CodeOTP     string `json:"code_otp" binding:"required,len=5,numeric"`
 	KeyUID      string `json:"key_uid" binding:"required,uuid"`
 }
 
 // UpdatePin is the struct for updating the pin
 type UpdatePin struct {
 	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
-	OldPin      string `json:"old_pin" binding:"required,len=4,numeric,min=4,max=4"`
-	NewPin      string `json:"new_pin" binding:"required,len=4,numeric,min=4,max=4"`
-	CodeOTP     string `json:"code_otp" binding:"required,len=5,numeric,min=5,max=5"`
-	KeyUID      string `json:"key_uid" binding:"required,uuid"`
+	OldPin      string `json:"old_pin" binding:"required,len=4,numeric"`
+	NewPin      string `json:"new_pin" binding:"required,len=4,numeric"`
+	ConfirmPin  string `json:"confirm_pin" binding:"required,len=4,numeric,eqfield=NewPin"`
 }
 
-// RemoveUserAccount is the struct for removing user account
+// RemoveUserAccount is the struct to remove user
 type RemoveUserAccount struct {
 	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
-	Pin         string `json:"pin" binding:"required,len=4,numeric,min=4,max=4"`
+	Pin         string `json:"pin" binding:"required,len=4,numeric"`
 }
 
 type AuthResponse struct {
@@ -94,27 +93,31 @@ type WalletResponse struct {
 }
 
 // UpdateUserPin updates the pin of a user
-//func (user *User) UpdateUserPin(ctx context.Context) error {
-//	err := DB.WithContext(ctx).Transaction(
-//		func(tx *gorm.DB) error {
-//			err := tx.Model(&User{}).Where(
-//				"phone_number = ? AND is_active = ? AND locked = ? AND quota = ?", user.PhoneNumber, true, false, 0,
-//			).Update("pin", user.Pin).Error
-//
-//			if err != nil {
-//				// return any error will rollback
-//				return fmt.Errorf("Failed to update user pin")
-//			}
-//			// return nil will commit the whole transaction
-//			return nil
-//		},
-//	)
-//	// Return the transaction error
-//	if err != nil {
-//		return fmt.Errorf("Something went wrong while updating user pin")
-//	}
-//	return nil
-//}
+func (user *User) UpdateUserPin() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	tx, err := DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(
+		ctx,
+		`UPDATE users SET pin = $1 WHERE phone_number = $2 AND is_active = true AND locked = false AND quota = 0`,
+		user.Pin, user.PhoneNumber,
+	)
+	if err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 // UpdateUserQuota updates the user data
 func (user *User) UpdateUserQuota() error {
