@@ -49,7 +49,7 @@ func UpdatePin(c *gin.Context) {
 	//Generate JWT token
 	token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
 	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
+		helpers.HandleError(c, http.StatusInternalServerError, "unexpected token error", err)
 		return
 	}
 

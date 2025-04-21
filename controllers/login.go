@@ -20,11 +20,11 @@ func Login(c *gin.Context) {
 
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "Invalid request data", err)
+		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
 		return
 	}
 
-	// Otherwise, fetch user and wallet from database
+	// Otherwise, fetch user and wallet from a database
 	var user models.User
 	var wallet models.Wallet
 	if err := models.GetUserAndWalletByPhone(body.PhoneNumber, &user, &wallet); err != nil {
@@ -32,13 +32,13 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// Check if the user is locked and quota exceeded
+	// Check if the user is locked and the quota exceeded
 	if user.Locked && user.Quota >= MaxLoginAttempts {
 		helpers.HandleError(c, http.StatusLocked, "Your account has been locked. Please contact support", nil)
 		return
 	}
 
-	// Lock the account if quota exceeds the limit
+	// Lock the account if the quota exceeds the limit
 	if user.Quota == MaxLoginAttempts && !user.Locked {
 		// lock user and wallet concurrently
 		group := errgroup.Group{}
@@ -79,7 +79,7 @@ func Login(c *gin.Context) {
 			}
 		}
 		// Return error
-		helpers.HandleError(c, http.StatusUnauthorized, "Invalid credentials", nil)
+		helpers.HandleError(c, http.StatusUnauthorized, "phone number or pin incorrect", nil)
 		return
 	}
 
