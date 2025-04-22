@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"net/http"
+	"os"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
@@ -21,7 +22,7 @@ func RemoveAccount(c *gin.Context) {
 	// search if user exists in DB
 	user, err := models.GetUserByPhoneNumber(body.PhoneNumber)
 	if err != nil {
-		helpers.HandleError(c, http.StatusNotFound, "request not found", err)
+		helpers.HandleError(c, http.StatusNotFound, "Invalid phone number or user PIN", err)
 		return
 	}
 
@@ -33,10 +34,11 @@ func RemoveAccount(c *gin.Context) {
 
 	// remove a user account
 	if err := user.RemoveUserAndWallet(); err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "request failed", err)
+		helpers.HandleError(c, http.StatusInternalServerError, "Failed to remove account", err)
 		return
 	}
 
-	// Send success response
+	// Send success response and delete cookie
+	c.SetCookie("ftk", "", -1, "/", os.Getenv("HOST"), false, true)
 	helpers.HandleSuccess(c, "Account removed successfully")
 }

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/emmadal/feeti-backend-user/controllers"
@@ -22,11 +23,16 @@ func main() {
 		log.Fatalln("Error loading .env file")
 	}
 
-	mode := os.Getenv("GIN_MODE")
+	mode := strings.TrimSpace(os.Getenv("MODE"))
 	if mode != "release" {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
+	}
+
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = ":4000"
 	}
 
 	// Initialize Gin server
@@ -58,11 +64,11 @@ func main() {
 	// initialize server
 	s := &http.Server{
 		Handler:        server,
-		Addr:           os.Getenv("PORT"),
+		Addr:           port,
 		WriteTimeout:   10 * time.Second,
 		ReadTimeout:    10 * time.Second,
 		IdleTimeout:    20 * time.Second,
-		MaxHeaderBytes: 1 << 2,
+		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 
 	// v1 routes
@@ -72,10 +78,10 @@ func main() {
 	v1.POST("/login", controllers.Login)
 	v1.PUT("/update-pin", controllers.UpdatePin)
 	v1.DELETE("/remove-account", controllers.RemoveAccount)
-	v1.DELETE("/signout", controllers.SignOut)
+	v1.DELETE("/sign-out", controllers.SignOut)
 
 	// start server
-	_, err := fmt.Fprintf(os.Stdout, "Server started on port %s\n", os.Getenv("PORT"))
+	_, err := fmt.Fprintf(os.Stdout, "Server started on port %s\n", port)
 	if err != nil {
 		log.Fatalln("Error writing to stdout")
 	}
