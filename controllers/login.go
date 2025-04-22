@@ -14,9 +14,9 @@ import (
 
 const MaxLoginAttempts = 3
 
-// Login handler to sign in user
+// Login handler to sign in a user
 func Login(c *gin.Context) {
-	var body models.UserLogin
+	body := models.UserLogin{}
 
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -61,7 +61,8 @@ func Login(c *gin.Context) {
 		)
 
 		if err := group.Wait(); err != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Something went wrong", err)
+			helpers.HandleError(c, http.StatusInternalServerError, "unexpect result with quota", err)
+			return
 		}
 
 		helpers.HandleError(
@@ -86,14 +87,14 @@ func Login(c *gin.Context) {
 	//Generate JWT token
 	token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
 	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
+		helpers.HandleError(c, http.StatusInternalServerError, "Unable to generate token", err)
 		return
 	}
 
 	// Reset user quota if needed to update database
 	if user.Quota > 0 {
 		if err := user.ResetUserQuota(); err != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
+			helpers.HandleError(c, http.StatusInternalServerError, "Unable to reset quota", err)
 			return
 		}
 	}
@@ -101,15 +102,15 @@ func Login(c *gin.Context) {
 	// Update device token only if changed
 	if user.DeviceToken != body.DeviceToken {
 		if err := user.UpdateDeviceToken(); err != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
+			helpers.HandleError(c, http.StatusInternalServerError, "Unable to update device token", err)
 			return
 		}
 	}
 
 	// Set cookie
 	domain := os.Getenv("HOST")
-	secure := os.Getenv("GIN_MODE") == "release"
-	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, secure, true)
+	//secure := os.Getenv("GIN_MODE") == "release"
+	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, false, true)
 
 	// Return success response
 	helpers.HandleSuccessData(

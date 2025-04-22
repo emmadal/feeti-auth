@@ -13,7 +13,7 @@ import (
 
 // Register handles user registration
 func Register(c *gin.Context) {
-	var body models.User
+	body := models.User{}
 
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -21,7 +21,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// search if user exists in DB
+	// search if the user exists in DB
 	if models.CheckUserByPhone(body.PhoneNumber) {
 		helpers.HandleError(c, http.StatusConflict, "User already exist", nil)
 		return
@@ -35,17 +35,17 @@ func Register(c *gin.Context) {
 	}
 	body.Pin = hashedPin
 
-	// Create user account
+	// Create a user account
 	err = body.CreateUser()
 	if err != nil {
 		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to process user", err)
 		return
 	}
 
-	// create user wallet
+	// create a user wallet
 	wallet, err := body.CreateWallet()
 	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, err.Error(), err)
+		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to process wallet", err)
 		return
 	}
 
@@ -58,8 +58,8 @@ func Register(c *gin.Context) {
 
 	// Set cookie
 	domain := os.Getenv("HOST")
-	secure := os.Getenv("GIN_MODE") == "release"
-	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, secure, true)
+	//secure := os.Getenv("GIN_MODE") == "release"
+	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, false, true)
 
 	// Send success response
 	helpers.HandleSuccessData(

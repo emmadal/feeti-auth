@@ -10,7 +10,7 @@ import (
 )
 
 func CheckOTP(c *gin.Context) {
-	var body models.Otp
+	body := models.Otp{}
 
 	// Bind request body
 	if err := c.ShouldBindJSON(&body); err != nil {

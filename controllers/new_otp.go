@@ -11,8 +11,8 @@ import (
 )
 
 func NewOTP(c *gin.Context) {
-	var body models.NewOtp
-	var otp models.Otp
+	body := models.NewOtp{}
+	otp := models.Otp{}
 
 	// Validate request
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -27,7 +27,7 @@ func NewOTP(c *gin.Context) {
 		return
 	}
 
-	// Store OTP in database
+	// Store OTP in the database
 	otp.KeyUID = uuid.NewString()
 	otp.Code = code
 	otp.PhoneNumber = body.PhoneNumber
@@ -40,7 +40,5 @@ func NewOTP(c *gin.Context) {
 	// Send OTP asynchronously
 	go helpers.SendOTP(body.PhoneNumber, otp.Code)
 
-	// Send response immediately
 	helpers.HandleSuccessData(c, "Code OTP created successfully", otp.KeyUID)
-
 }

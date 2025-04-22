@@ -10,7 +10,7 @@ import (
 
 // RemoveAccount remove user account
 func RemoveAccount(c *gin.Context) {
-	var body models.RemoveUserAccount
+	body := models.RemoveUserAccount{}
 
 	// Validate request body
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -31,7 +31,7 @@ func RemoveAccount(c *gin.Context) {
 		return
 	}
 
-	// remove user account
+	// remove a user account
 	if err := user.RemoveUserAndWallet(); err != nil {
 		helpers.HandleError(c, http.StatusInternalServerError, "request failed", err)
 		return

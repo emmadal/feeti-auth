@@ -24,8 +24,8 @@ func SignOut(c *gin.Context) {
 	}
 
 	// Delete cookie
-	secure := os.Getenv("GIN_MODE") == "release"
-	c.SetCookie("ftk", "", -1, "/", os.Getenv("HOST"), secure, true)
+	//secure := os.Getenv("GIN_MODE") == "release"
+	c.SetCookie("ftk", "", -1, "/", os.Getenv("HOST"), false, true)
 
 	// Return success response
 	helpers.HandleSuccess(c, "Successfully signed out")

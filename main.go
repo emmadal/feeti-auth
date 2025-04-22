@@ -61,8 +61,8 @@ func main() {
 		Addr:           os.Getenv("PORT"),
 		WriteTimeout:   10 * time.Second,
 		ReadTimeout:    10 * time.Second,
-		IdleTimeout:    30 * time.Second,
-		MaxHeaderBytes: 1 << 5,
+		IdleTimeout:    20 * time.Second,
+		MaxHeaderBytes: 1 << 2,
 	}
 
 	// v1 routes

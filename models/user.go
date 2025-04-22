@@ -210,7 +210,8 @@ func (user *User) CreateWallet() (*Wallet, error) {
 
 	err = tx.QueryRow(
 		ctx,
-		`INSERT INTO wallets(user_id) VALUES ($1) RETURNING id, balance, currency`, user.ID,
+		`INSERT INTO wallets(user_id) VALUES ($1) RETURNING id, balance, currency`,
+		user.ID,
 	).Scan(
 		&wallet.ID,
 		&wallet.Balance,
@@ -264,7 +265,7 @@ func (user *User) CreateUser() error {
 	return nil
 }
 
-// RemoveUserAndWallet deactivate user account
+// RemoveUserAndWallet deactivate the user account
 func (user *User) RemoveUserAndWallet() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

@@ -12,7 +12,7 @@ import (
 )
 
 func UpdatePin(c *gin.Context) {
-	var body models.UpdatePin
+	body := models.UpdatePin{}
 
 	if err := c.ShouldBindJSON(&body); err != nil {
 		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
@@ -55,8 +55,8 @@ func UpdatePin(c *gin.Context) {
 
 	// Replace old token with new one
 	domain := os.Getenv("HOST")
-	secure := os.Getenv("GIN_MODE") == "release"
-	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, secure, true)
+	//secure := os.Getenv("GIN_MODE") == "release"
+	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, false, true)
 
 	go helpers.SendPinMessage(body.PhoneNumber)
 
