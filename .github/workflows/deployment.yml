@@ -55,12 +55,12 @@ jobs:
       - name: Copy artifacts
         run: |
           scp -o StrictHostKeyChecking=no auth-user-${{ github.run_number }}.tar ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/auth-user/
-          scp -o StrictHostKeyChecking=no .env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ INSTALL_PATH }}
+          scp -o StrictHostKeyChecking=no .env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.INSTALL_PATH }}
 
       - name: Install and Deploy
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
-            cd ${{ INSTALL_PATH }}
+            cd ${{ secrets.INSTALL_PATH }}
             export TAG=${{ github.run_number }}  # Set the TAG variable
             docker load -i auth-user-${{ github.run_number }}.tar
             docker stack deploy --compose-file docker-compose.yml auth-user

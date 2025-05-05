@@ -28,13 +28,13 @@ jobs:
       - name: Build with Go
         run: |
           mkdir -p build || exit 1
-          go build -ldflags="-s -w" -v -o build/backend-user . || exit 1
+          go build -ldflags="-s -w" -v -o build/auth-user . || exit 1
 
       - name: Archive artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: backend-user
-          path: build/backend-user
+          name: auth-user
+          path: build/auth-user
 
       - name: Generate release tag
         id: tag
@@ -58,6 +58,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/backend-user
-          asset_name: backend-user-${{ steps.tag.outputs.release_tag }}
+          asset_path: build/auth-user
+          asset_name: auth-user-${{ steps.tag.outputs.release_tag }}
           asset_content_type: application/octet-stream
