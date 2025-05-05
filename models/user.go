@@ -38,6 +38,7 @@ type Wallet struct {
 	UserID    int64     `json:"user_id" db:"user_id" binding:"required,number,gt=0"`
 	Balance   int64     `json:"balance" db:"balance"`
 	Currency  string    `json:"currency" db:"currency" binding:"alpha,oneof=XAF"`
+	Locked    bool      `json:"locked" db:"locked"`
 	IsActive  bool      `json:"is_active" db:"is_active"`
 	CreatedAt time.Time `json:"created_at" db:"created_at,omitempty"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at,omitempty"`
@@ -163,7 +164,7 @@ func (user *User) LockWallet() error {
 	_, err := WithTransaction(
 		DB, func(tx pgx.Tx) (any, error) {
 			_, err := tx.Exec(
-				ctx, "UPDATE wallets SET is_active = $1 WHERE user_id = $2", false, user.ID,
+				ctx, "UPDATE wallets SET locked = $1 WHERE user_id = $2", true, user.ID,
 			)
 			return nil, err
 		},
@@ -279,8 +280,8 @@ func (user *User) RemoveUserAndWallet() error {
 	}()
 
 	batch := &pgx.Batch{}
-	batch.Queue(`UPDATE users SET is_active = $1 WHERE id = $2`, false, user.ID)
-	batch.Queue(`UPDATE wallets SET is_active = $1 WHERE user_id = $2`, false, user.ID)
+	batch.Queue(`UPDATE users SET is_active = $1, locked = $2, quota = $3 WHERE id = $4`, false, true, 3, user.ID)
+	batch.Queue(`UPDATE wallets SET is_active = $1, locked = $2 WHERE user_id = $3`, false, true, user.ID)
 
 	batchResults := tx.SendBatch(ctx, batch)
 
@@ -328,7 +329,7 @@ func GetUserByPhoneNumber(phone string) (*User, error) {
 	return &user, nil
 }
 
-// CheckUserByPhone verify if a phone number exist
+// CheckUserByPhone verify if a phone number exists
 func CheckUserByPhone(phone string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -392,7 +393,7 @@ func (user *User) UpdateDeviceToken() error {
 	return nil
 }
 
-// WithTransaction is a function to create transaction
+// WithTransaction is a function to create a transaction
 func WithTransaction[T any](conn *pgxpool.Pool, fn func(tx pgx.Tx) (T, error)) (T, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

@@ -43,3 +43,4 @@ api_request/
 /vendor/
 vendor/
 /.qodo
+.qodo/

@@ -35,7 +35,7 @@ func DBConnect() {
 				log.Fatalf("Unable to connect to database: %v\n", err)
 			}
 
-			// Create tables after connection is established and assigned to DB
+			// Create tables after a connection is established and assigned to DB
 			if err := createTables(); err != nil {
 				log.Fatalf("Unable to create tables: %v\n", err)
 			}

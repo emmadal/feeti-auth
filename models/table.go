@@ -41,6 +41,7 @@ func createTables() error {
 			user_id BIGINT NOT NULL,
 			balance BIGINT DEFAULT 0 NOT NULL,
 			currency VARCHAR(3) DEFAULT 'XAF' NOT NULL,
+    		locked BOOLEAN DEFAULT FALSE,
 			is_active BOOLEAN DEFAULT TRUE,
 			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
