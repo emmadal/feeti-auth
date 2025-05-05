@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/emmadal/feeti-backend-user/controllers"
@@ -23,14 +22,14 @@ func main() {
 		log.Fatalln("Error loading .env file")
 	}
 
-	mode := strings.TrimSpace(os.Getenv("MODE"))
+	mode := os.Getenv("MODE")
 	if mode != "release" {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	port := strings.TrimSpace(os.Getenv("PORT"))
+	port := os.Getenv("PORT")
 	if port == "" {
 		port = ":4000"
 	}

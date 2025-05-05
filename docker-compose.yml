@@ -1,9 +1,9 @@
 version: "3.8"
 services:
   backend:
-    image: backend-user:${TAG}
-    container_name: backend-user
-    hostname: backend-user-{{.Task.Slot}}
+    image: auth-user:${TAG}
+    container_name: auth-user
+    hostname: auth-user-{{.Task.Slot}}
     env_file:
       - .env
     deploy:
@@ -16,7 +16,7 @@ services:
         order: start-first
       resources:
         limits:
-          cpus: "0.50"
+          cpus: "0.80"
           memory: 512M
         reservations:
           cpus: "0.25"
@@ -28,9 +28,9 @@ services:
         protocol: tcp
         mode: ingress
     networks:
-      - backend-user-network
+      - auth-user-network
 
 networks:
-  backend-user-network:
+  auth-user-network:
     driver: overlay
     attachable: true

@@ -14,7 +14,7 @@ COPY . .
 COPY .env .env
 
 # Build the Go binary with optimizations
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o backend-user .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o auth-user .
 
 # Stage 2: Create a minimal runtime image
 FROM scratch  
@@ -22,11 +22,11 @@ FROM scratch
 WORKDIR /app
 
 # Copy only the necessary binary and .env file from the builder stage
-COPY --from=builder /app/backend-user /app/
+COPY --from=builder /app/auth-user /app/
 COPY --from=builder /app/.env /app/.env 
 
 # Expose the port for the application
 EXPOSE 4000
 
 # Run the Go binary
-CMD ["/app/backend-user"]
+CMD ["/app/auth-user"]
