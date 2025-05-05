@@ -22,11 +22,11 @@ func main() {
 		log.Fatalln("Error loading .env file")
 	}
 
-	mode := os.Getenv("MODE")
-	if mode != "release" {
-		gin.SetMode(gin.DebugMode)
-	} else {
+	mode := os.Getenv("GIN_MODE")
+	if mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
 	}
 
 	port := os.Getenv("PORT")
