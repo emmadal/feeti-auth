@@ -44,7 +44,7 @@ jobs:
             --build-arg HOST="${{ secrets.HOST }}" \
             --build-arg NEW_RELIC_LICENSE_KEY="${{ secrets.NEW_RELIC_LICENSE_KEY }}" \
             --build-arg GIN_MODE="${{ secrets.GIN_MODE }}" \
-            --build-arg DB_NAME="${{ secrets.DATABASE_URL }}" \
+            --build-arg DATABASE_URL="${{ secrets.DATABASE_URL }}" \
             --build-arg TWILIO_ACCOUNT_SID="${{ secrets.TWILIO_ACCOUNT_SID }}" \
             --build-arg TWILIO_AUTH_TOKEN="${{ secrets.TWILIO_AUTH_TOKEN }}" \
             -t backend-user:${{ github.run_number }} .
