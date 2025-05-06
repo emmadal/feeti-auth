@@ -17,7 +17,7 @@ func HashPassword(password string) (string, error) {
 		cost = bcrypt.MinCost
 	}
 	password = strings.TrimSpace(password)
-	if strings.TrimSpace(password) == "" {
+	if password == "" {
 		return "", fmt.Errorf("password cannot be empty")
 	}
 	encodedHash, err := bcrypt.GenerateFromPassword([]byte(password), cost)

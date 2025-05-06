@@ -1,6 +1,6 @@
 # feeti-backend-user
 
-Golang backend for feeti to manage users with Gin framework
+Golang backend for feeti to manage users with a Gin framework
 
 ## Installation
 
