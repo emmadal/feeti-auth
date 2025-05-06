@@ -17,6 +17,20 @@ jobs:
         with:
           go-version: 1.24
 
+      - name: Create environment file
+        run: |
+          cat <<EOF > .env
+          PORT=${{ secrets.PORT }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          HOST=${{ secrets.HOST }}
+          NEW_RELIC_LICENSE_KEY=${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          GIN_MODE=${{ secrets.GIN_MODE }}
+          TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN=${{ secrets.TWILIO_AUTH_TOKEN }}
+          EOF
+        shell: bash
+
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.5.4
         with:
@@ -40,13 +54,15 @@ jobs:
 
       - name: Copy artifacts to server
         run: |
-          scp -o StrictHostKeyChecking=no auth-user-${{ github.run_number }}.tar ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/auth-user/
+          scp -o StrictHostKeyChecking=no auth-user-${{ github.run_number }}.tar ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.INSTALL_PATH }}
+          scp -o StrictHostKeyChecking=no .env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.INSTALL_PATH }}
+
 
       - name: Deploy to server
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             cd ${{ secrets.INSTALL_PATH }}
             export TAG=${{ github.run_number }}  # Set the TAG variable
-            docker load -i /var/auth-user/auth-user-${{ github.run_number }}.tar
+            docker load -i ${{ secrets.INSTALL_PATH }}/auth-user-${{ github.run_number }}.tar
             docker stack deploy --compose-file docker-compose.yml auth-user
           EOF

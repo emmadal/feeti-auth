@@ -30,6 +30,9 @@ RUN go mod download
 # Copy the application source code
 COPY . .
 
+# Copy the .env file into the build context
+COPY .env .env
+
 # Build the Go binary with optimizations
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o auth-user .
 
@@ -50,6 +53,7 @@ ENV PORT=$PORT \
 
 # Copy only the necessary binary from the builder stage
 COPY --from=builder /app/auth-user /app/
+COPY --from=builder /app/.env /app/.env
 
 # Expose the port for the application
 EXPOSE 4000
