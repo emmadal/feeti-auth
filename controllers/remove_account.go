@@ -19,7 +19,7 @@ func RemoveAccount(c *gin.Context) {
 		return
 	}
 
-	// search if user exists in DB
+	// search if a user exists in DB
 	user, err := models.GetUserByPhoneNumber(body.PhoneNumber)
 	if err != nil {
 		helpers.HandleError(c, http.StatusNotFound, "Invalid phone number or user PIN", err)
