@@ -17,9 +17,10 @@ import (
 )
 
 func main() {
-	// Load environment variables
+	// Load environment variables from the.env file if it exists,
+	// This is now optional since we're using Docker env variables
 	if err := godotenv.Load(); err != nil {
-		log.Fatalln("Error loading .env file")
+		log.Println("No .env file found, using environment variables")
 	}
 
 	mode := os.Getenv("GIN_MODE")
