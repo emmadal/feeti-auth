@@ -4,8 +4,6 @@ services:
     image: auth-user:${TAG}
     container_name: auth-user
     hostname: auth-user-{{.Task.Slot}}
-    env_file:
-      - .env
     deploy:
       replicas: 5
       restart_policy:
