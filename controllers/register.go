@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -14,6 +16,7 @@ import (
 // Register handles user registration
 func Register(c *gin.Context) {
 	body := models.User{}
+	var response helpers.RequestResponse
 
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -22,7 +25,7 @@ func Register(c *gin.Context) {
 	}
 
 	// search if the user exists in DB
-	if models.CheckUserByPhone(body.PhoneNumber) {
+	if body.CheckUserByPhone() {
 		helpers.HandleError(c, http.StatusConflict, "User already exist", nil)
 		return
 	}
@@ -33,24 +36,46 @@ func Register(c *gin.Context) {
 		helpers.HandleError(c, http.StatusInternalServerError, "Unable to process PIN", err)
 		return
 	}
-	body.Pin = hashedPin
 
 	// Create a user account
-	err = body.CreateUser()
+	body.Pin = hashedPin
+	user, err := body.CreateUser()
 	if err != nil {
 		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to process user", err)
 		return
 	}
 
 	// create a user wallet
-	wallet, err := body.CreateWallet()
+	pMessage := helpers.ProducerMessage{
+		Subject: "wallet.create",
+		Data:    fmt.Sprintf("%d", user.ID),
+	}
+
+	// Send the initial wallet creation request
+	natsMsg, err := pMessage.WalletEvent()
 	if err != nil {
-		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to process wallet", err)
+		_ = user.RollbackUser()
+		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to request wallet creation", err)
+		return
+	}
+	if !response.Success {
+		_ = user.RollbackUser()
+		helpers.HandleError(c, http.StatusUnprocessableEntity, response.Error, nil)
 		return
 	}
 
+	_ = json.Unmarshal(natsMsg.Data, &response)
+
+	// Convert response.Data from map[string]interface{} to models.Wallet
+	walletData := response.Data.(map[string]any)
+	wallet := models.Wallet{
+		ID:       int64(walletData["id"].(float64)),
+		Balance:  walletData["balance"].(float64),
+		Currency: walletData["currency"].(string),
+	}
+
 	// Generate JWT token
-	token, err := jwt.GenerateToken(body.ID, []byte(os.Getenv("JWT_KEY")))
+	token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
 	if err != nil {
 		helpers.HandleError(c, http.StatusInternalServerError, "Unable to generate token", err)
 		return
@@ -65,18 +90,14 @@ func Register(c *gin.Context) {
 	helpers.HandleSuccessData(
 		c, "User registered successfully", models.AuthResponse{
 			User: models.UserResponse{
-				ID:          body.ID,
-				PhoneNumber: body.PhoneNumber,
-				FirstName:   body.FirstName,
-				LastName:    body.LastName,
-				Photo:       "",
-				DeviceToken: body.DeviceToken,
+				ID:          user.ID,
+				PhoneNumber: user.PhoneNumber,
+				FirstName:   user.FirstName,
+				LastName:    user.LastName,
+				Photo:       user.Photo,
+				DeviceToken: user.DeviceToken,
 			},
-			Wallet: models.WalletResponse{
-				ID:       wallet.ID,
-				Balance:  wallet.Balance,
-				Currency: wallet.Currency,
-			},
+			Wallet: wallet,
 		},
 	)
 }

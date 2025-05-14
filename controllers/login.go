@@ -1,15 +1,19 @@
 package controllers
 
 import (
-	"golang.org/x/sync/errgroup"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
 	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
+	"github.com/nats-io/nats.go"
 )
 
 const MaxLoginAttempts = 3
@@ -17,6 +21,8 @@ const MaxLoginAttempts = 3
 // Login handler to sign in a user
 func Login(c *gin.Context) {
 	body := models.UserLogin{}
+	var response helpers.RequestResponse
+	natsMsg := make(chan *nats.Msg, 1)
 
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -25,9 +31,9 @@ func Login(c *gin.Context) {
 	}
 
 	// Otherwise, fetch user and wallet from a database
-	var user models.User
-	var wallet models.Wallet
-	if err := models.GetUserAndWalletByPhone(body.PhoneNumber, &user, &wallet); err != nil {
+	userStruct := &models.User{PhoneNumber: body.PhoneNumber}
+	user, err := userStruct.GetUserByPhone()
+	if err != nil {
 		helpers.HandleError(c, http.StatusNotFound, "request not found", err)
 		return
 	}
@@ -53,21 +59,33 @@ func Login(c *gin.Context) {
 
 		group.Go(
 			func() error {
-				if err := user.LockWallet(); err != nil {
+				// send a nats message to lock wallet
+				pMessage := &helpers.ProducerMessage{
+					Subject: "wallet.lock",
+					Data:    fmt.Sprintf("%d", userStruct.ID),
+				}
+				resp, err := pMessage.WalletEvent()
+				if err != nil {
 					return err
 				}
+				natsMsg <- resp
 				return nil
 			},
 		)
 
 		if err := group.Wait(); err != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "unexpect result with quota", err)
+			helpers.HandleError(c, http.StatusInternalServerError, "Unable to lock user and wallet", err)
 			return
 		}
-
-		helpers.HandleError(
-			c, http.StatusLocked, "Maximum login attempts reached. Your account has been locked", nil,
-		)
+		result := <-natsMsg
+		_ = json.Unmarshal(result.Data, &response)
+		if response.Success && response.Data == nil {
+			helpers.HandleError(
+				c, http.StatusLocked, "Maximum login attempts reached. Your account has been locked", nil,
+			)
+			return
+		}
+		helpers.HandleError(c, http.StatusInternalServerError, "Something went wrong while locking user data", nil)
 		return
 	}
 
@@ -82,6 +100,32 @@ func Login(c *gin.Context) {
 		// Return error
 		helpers.HandleError(c, http.StatusUnauthorized, "phone number or pin incorrect", nil)
 		return
+	}
+
+	// publish a request to get wallet data
+	pMessage := helpers.ProducerMessage{
+		Subject: "wallet.get",
+		Data:    fmt.Sprintf("%d", user.ID),
+	}
+	resp, err := pMessage.WalletEvent()
+	if err != nil {
+		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to process wallet", err)
+		return
+	}
+
+	// Unmarshal the wallet data
+	_ = json.Unmarshal(resp.Data, &response)
+	if !response.Success {
+		helpers.HandleError(c, http.StatusUnprocessableEntity, response.Error, nil)
+		return
+	}
+
+	// Convert response.Data from map[string]interface{} to models.Wallet
+	walletData := response.Data.(map[string]any)
+	wallet := models.Wallet{
+		ID:       int64(walletData["id"].(float64)),
+		Balance:  walletData["balance"].(float64),
+		Currency: walletData["currency"].(string),
 	}
 
 	//Generate JWT token
@@ -123,11 +167,7 @@ func Login(c *gin.Context) {
 				Photo:       user.Photo,
 				DeviceToken: user.DeviceToken,
 			},
-			Wallet: models.WalletResponse{
-				ID:       wallet.ID,
-				Balance:  wallet.Balance,
-				Currency: wallet.Currency,
-			},
+			Wallet: wallet,
 		},
 	)
 }
