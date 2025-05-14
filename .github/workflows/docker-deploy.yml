@@ -1,0 +1,127 @@
+# GitHub Actions workflow for building, pushing Docker image, and deploying to Kubernetes with secrets automation
+name: Docker Build and Deploy with Secrets
+
+on:
+  push:
+    branches:
+      - main  # Trigger on push to the main branch, adjust as needed
+  workflow_dispatch:  # Allow manual triggering of workflow
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY_URL }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      - name: Extract metadata for Docker image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_REGISTRY_URL }}/feeti-auth-service
+          tags: |
+            type=sha,format=short
+            type=ref,event=branch
+            latest
+      
+      - name: Build and push Docker image
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY_URL }}/feeti-auth-service:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_REGISTRY_URL }}/feeti-auth-service:buildcache,mode=max
+      
+      - name: Image digest
+        run: echo "Image digest ${{ steps.docker_build.outputs.digest }}"
+      
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'  # Use a compatible version with your cluster
+      
+      - name: Configure Kubernetes cluster
+        id: kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          kubectl cluster-info || { echo "Failed to connect to cluster"; exit 1; }
+      
+      - name: Create namespace if it doesn't exist
+        run: |
+          kubectl get namespace feeti-auth || kubectl apply -f k8s/namespace.yaml
+          kubectl config set-context --current --namespace=feeti-auth
+      
+      - name: Apply ConfigMap
+        run: |
+          kubectl apply -f k8s/configmap.yaml -n feeti-auth
+          kubectl get configmap auth-config -n feeti-auth || { echo "ConfigMap creation failed"; exit 1; }
+      
+      - name: Create or update Kubernetes secrets
+        run: |
+          kubectl create secret generic auth-secrets \
+            --namespace=feeti-auth \
+            --from-literal=JWT_KEY=${{ secrets.JWT_KEY }} \
+            --from-literal=TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }} \
+            --from-literal=TWILIO_AUTH_TOKEN=${{ secrets.TWILIO_AUTH_TOKEN }} \
+            --from-literal=NEW_RELIC_LICENSE_KEY=${{ secrets.NEW_RELIC_LICENSE_KEY }} \
+            --from-literal=DATABASE_URL=${{ secrets.DATABASE_URL }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Verify secret was created successfully
+          kubectl get secret auth-secrets -n feeti-auth || { echo "Secret creation failed"; exit 1; }
+      
+      - name: Update deployment image
+        run: |
+          # Get the new image digest/tag
+          IMAGE_TAG=$(echo ${{ github.sha }} | head -c7)
+          IMAGE_PATH="${{ secrets.DOCKER_REGISTRY_URL }}/feeti-auth-service:$IMAGE_TAG"
+          
+          # Update the deployment to use the new image
+          kubectl set image deployment/auth-service auth-service=$IMAGE_PATH -n feeti-auth || { echo "Failed to update deployment image"; exit 1; }
+      
+      - name: Apply Kubernetes manifests in order
+        run: |
+          # Apply in specific order to ensure dependencies are met
+          kubectl apply -f k8s/network-policy.yaml -n feeti-auth
+          kubectl apply -f k8s/auth-service.yaml -n feeti-auth
+          kubectl apply -f k8s/auth-deployment.yaml -n feeti-auth
+          kubectl apply -f k8s/auth-ingress.yaml -n feeti-auth
+          kubectl apply -f k8s/auth-hpa.yaml -n feeti-auth
+          kubectl apply -f k8s/health-check.yaml -n feeti-auth
+      
+      - name: Verify deployment status
+        run: |
+          echo "Waiting for deployment to complete..."
+          kubectl rollout status deployment/auth-service -n feeti-auth --timeout=300s
+          
+          # Check if pods are running
+          PODS_RUNNING=$(kubectl get pods -n feeti-auth -l app=auth-service -o jsonpath='{.items[*].status.phase}' | grep -c "Running")
+          if [ "$PODS_RUNNING" -lt 1 ]; then
+            echo "Error: No pods are running for auth-service"
+            kubectl get pods -n feeti-auth -l app=auth-service
+            kubectl describe pods -n feeti-auth -l app=auth-service
+            exit 1
+          fi
+          
+          echo "Deployment successfully completed with $PODS_RUNNING pods running"
+          
+      - name: Check service endpoints
+        run: |
+          echo "Verifying service endpoints..."
+          kubectl get endpoints auth-service -n feeti-auth
+          
+          # Additional checks could be added here for more validation
