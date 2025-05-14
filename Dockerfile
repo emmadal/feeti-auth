@@ -1,5 +1,5 @@
 # Stage 1: Build the Go binary
-FROM golang:1.24.2-alpine AS builder
+FROM golang:1.24.3-alpine AS builder
 
 WORKDIR /app
 
@@ -30,33 +30,19 @@ RUN go mod download
 # Copy the application source code
 COPY . .
 
-# Copy the .env file into the build context
-COPY .env .env
-
 # Build the Go binary with optimizations
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o auth-user .
 
 # Stage 2: Create a minimal runtime image
-FROM scratch  
+FROM alpine:latest
 
 WORKDIR /app
 
-# Set environment variables again for runtime
-ENV PORT=$PORT \
-    JWT_KEY=$JWT_SECRET \
-    HOST=$HOST \
-    NEW_RELIC_LICENSE_KEY=$NEW_RELIC_LICENSE_KEY \
-    GIN_MODE=$GIN_MODE \
-    DATABASE_URL=$DATABASE_URL \
-    TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID \
-    TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN
-
 # Copy only the necessary binary from the builder stage
-COPY --from=builder /app/auth-user /app/
-COPY --from=builder /app/.env /app/.env
+COPY --from=builder /app/feeti-auth /app/
 
 # Expose the port for the application
 EXPOSE 4000
 
 # Run the Go binary
-CMD ["/app/auth-user"]
+CMD ["/app/feeti-auth"]
