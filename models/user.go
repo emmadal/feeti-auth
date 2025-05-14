@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"time"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"time"
 )
 
 // UserLogin is the struct for user login
@@ -14,6 +16,12 @@ type UserLogin struct {
 	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
 	Pin         string `json:"pin" binding:"required,len=4,numeric"`
 	DeviceToken string `json:"device_token" binding:"required,min=10,max=100"`
+}
+
+type Wallet struct {
+	ID       int64   `json:"id"`
+	Balance  float64 `json:"balance"`
+	Currency string  `json:"currency"`
 }
 
 // User is the struct for a user
@@ -30,18 +38,6 @@ type User struct {
 	IsActive    bool      `json:"is_active" db:"is_active"`
 	CreatedAt   time.Time `json:"created_at" db:"created_at,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at" db:"updated_at,omitempty"`
-}
-
-// Wallet is the struct for a wallet
-type Wallet struct {
-	ID        int64     `json:"id" db:"id,omitempty"`
-	UserID    int64     `json:"user_id" db:"user_id" binding:"required,number,gt=0"`
-	Balance   int64     `json:"balance" db:"balance"`
-	Currency  string    `json:"currency" db:"currency" binding:"alpha,oneof=XAF"`
-	Locked    bool      `json:"locked" db:"locked"`
-	IsActive  bool      `json:"is_active" db:"is_active"`
-	CreatedAt time.Time `json:"created_at" db:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at" db:"updated_at,omitempty"`
 }
 
 // Login is the struct for login
@@ -74,8 +70,8 @@ type RemoveUserAccount struct {
 }
 
 type AuthResponse struct {
-	User   UserResponse   `json:"user"`
-	Wallet WalletResponse `json:"wallet"`
+	User   UserResponse `json:"user"`
+	Wallet Wallet       `json:"wallet"`
 }
 
 type UserResponse struct {
@@ -85,12 +81,6 @@ type UserResponse struct {
 	PhoneNumber string `json:"phone_number"`
 	Photo       string `json:"photo"`
 	DeviceToken string `json:"device_token"`
-}
-
-type WalletResponse struct {
-	ID       int64  `json:"id"`
-	Currency string `json:"currency"`
-	Balance  int64  `json:"balance"`
 }
 
 // UpdateUserPin updates the pin of a user
@@ -158,23 +148,6 @@ func (user *User) LockUser() error {
 	return nil
 }
 
-// LockWallet locks a user wallet
-func (user *User) LockWallet() error {
-	ctx := context.Background()
-	_, err := WithTransaction(
-		DB, func(tx pgx.Tx) (any, error) {
-			_, err := tx.Exec(
-				ctx, "UPDATE wallets SET locked = $1 WHERE user_id = $2", true, user.ID,
-			)
-			return nil, err
-		},
-	)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 // ResetUserQuota resets the user quota
 func (user *User) ResetUserQuota() error {
 	ctx := context.Background()
@@ -194,10 +167,11 @@ func (user *User) ResetUserQuota() error {
 	return nil
 }
 
-// CreateWallet creates user wallet
-func (user *User) CreateWallet() (*Wallet, error) {
+// CreateUser creates a new user
+func (user *User) CreateUser() (*User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	var photo sql.RawBytes
 
 	tx, err := DB.Begin(ctx)
 	if err != nil {
@@ -207,16 +181,20 @@ func (user *User) CreateWallet() (*Wallet, error) {
 		_ = tx.Rollback(ctx)
 	}()
 
-	wallet := &Wallet{}
-
+	var newUser User
 	err = tx.QueryRow(
 		ctx,
-		`INSERT INTO wallets(user_id) VALUES ($1) RETURNING id, balance, currency`,
-		user.ID,
+		`INSERT INTO users(first_name, last_name, phone_number, pin, device_token)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, first_name, last_name, phone_number, photo, device_token`,
+		user.FirstName, user.LastName, user.PhoneNumber, user.Pin, user.DeviceToken,
 	).Scan(
-		&wallet.ID,
-		&wallet.Balance,
-		&wallet.Currency,
+		&newUser.ID,
+		&newUser.FirstName,
+		&newUser.LastName,
+		&newUser.PhoneNumber,
+		&photo,
+		&newUser.DeviceToken,
 	)
 	if err != nil {
 		return nil, err
@@ -226,11 +204,10 @@ func (user *User) CreateWallet() (*Wallet, error) {
 		return nil, err
 	}
 
-	return wallet, nil
+	return &newUser, nil
 }
 
-// CreateUser creates a new user
-func (user *User) CreateUser() error {
+func (user *User) RollbackUser() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -241,20 +218,7 @@ func (user *User) CreateUser() error {
 	defer func() {
 		_ = tx.Rollback(ctx)
 	}()
-
-	err = tx.QueryRow(
-		ctx,
-		`INSERT INTO users(first_name, last_name, phone_number, pin, device_token)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, first_name, last_name, phone_number, device_token`,
-		user.FirstName, user.LastName, user.PhoneNumber, user.Pin, user.DeviceToken,
-	).Scan(
-		&user.ID,
-		&user.FirstName,
-		&user.LastName,
-		&user.PhoneNumber,
-		&user.DeviceToken,
-	)
+	_, err = tx.Exec(ctx, `DELETE FROM users WHERE user_id = $1 AND is_active = true`, user.ID)
 	if err != nil {
 		return err
 	}
@@ -266,8 +230,8 @@ func (user *User) CreateUser() error {
 	return nil
 }
 
-// RemoveUserAndWallet deactivate the user account
-func (user *User) RemoveUserAndWallet() error {
+// DeactivateUserAccount deactivate the user account
+func (user *User) DeactivateUserAccount() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -330,19 +294,19 @@ func GetUserByPhoneNumber(phone string) (*User, error) {
 }
 
 // CheckUserByPhone verify if a phone number exists
-func CheckUserByPhone(phone string) bool {
+func (user *User) CheckUserByPhone() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	var id int
 	err := DB.QueryRow(
 		ctx,
-		`SELECT id FROM users WHERE phone_number = $1 AND is_active = $2`,
-		phone, true,
+		`SELECT id FROM users WHERE phone_number = $1 AND is_active = true`,
+		user.PhoneNumber,
 	).Scan(&id)
 
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return false // No user found
 		}
 		return false // Query failed for some reason
@@ -351,28 +315,27 @@ func CheckUserByPhone(phone string) bool {
 	return true // User found
 }
 
-// GetUserAndWalletByPhone find user and wallet by phone number
-func GetUserAndWalletByPhone(phone string, u *User, w *Wallet) error {
+// GetUserByPhone find user by phone number
+func (user *User) GetUserByPhone() (*User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var photo sql.RawBytes
 	err := DB.QueryRow(
 		ctx,
-		`SELECT u.id, u.first_name, u.last_name, u.phone_number, u.device_token, u.pin, u.quota, u.locked, u.photo,
-            w.balance, w.currency, w.id FROM users u INNER JOIN wallets w ON w.user_id = u.id
-         WHERE u.phone_number = $1 AND u.is_active = true`,
-		phone,
+		`SELECT id, first_name, last_name, phone_number, device_token, pin, quota, locked, photo
+         FROM users WHERE phone_number = $1 AND is_active = true`,
+		user.PhoneNumber,
 	).Scan(
-		&u.ID, &u.FirstName, &u.LastName, &u.PhoneNumber, &u.DeviceToken, &u.Pin, &u.Quota,
-		&u.Locked, &photo, &w.Balance, &w.Currency, &w.ID,
+		&user.ID, &user.FirstName, &user.LastName, &user.PhoneNumber, &user.DeviceToken, &user.Pin, &user.Quota,
+		&user.Locked, &photo,
 	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return pgx.ErrNoRows
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("user not found")
 		}
-		return err
+		return nil, err
 	}
-	return nil
+	return user, nil
 }
 
 // UpdateDeviceToken update user device token

@@ -36,20 +36,7 @@ func createTables() error {
 			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		);`,
-		`CREATE TABLE IF NOT EXISTS wallets (
-			id SERIAL PRIMARY KEY,
-			user_id BIGINT NOT NULL,
-			balance BIGINT DEFAULT 0 NOT NULL,
-			currency VARCHAR(3) DEFAULT 'XAF' NOT NULL,
-    		locked BOOLEAN DEFAULT FALSE,
-			is_active BOOLEAN DEFAULT TRUE,
-			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-			CONSTRAINT fk_wallet_user FOREIGN KEY (user_id)
-				REFERENCES users (id)
-				ON DELETE CASCADE
-				ON UPDATE CASCADE
-		);`,
+		`CREATE INDEX IF NOT EXISTS idx_users_lookup ON users (phone_number, is_active, quota, locked, premium);`,
 	}
 	for _, query := range queries {
 		if _, err := DB.Exec(ctx, query); err != nil {
