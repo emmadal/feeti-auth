@@ -1,12 +1,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"github.com/emmadal/feeti-backend-user/middleware"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
+
+	"github.com/emmadal/feeti-backend-user/helpers"
+	"github.com/emmadal/feeti-backend-user/middleware"
 
 	"github.com/emmadal/feeti-backend-user/controllers"
 	"github.com/emmadal/feeti-backend-user/models"
@@ -55,9 +61,6 @@ func main() {
 	server.Use(middleware.Timeout(5 * time.Second))
 	server.Use(middleware.Recover())
 
-	// Database connection
-	models.DBConnect()
-
 	// Set api version group
 	v1 := server.Group("/v1/api")
 
@@ -73,17 +76,57 @@ func main() {
 
 	// v1 routes
 	v1.POST("/register", controllers.Register)
-	v1.POST("/new-otp", controllers.NewOTP)
-	v1.POST("/check-otp", controllers.CheckOTP)
 	v1.POST("/login", controllers.Login)
 	v1.PUT("/update-pin", controllers.UpdatePin)
 	v1.DELETE("/remove-account", controllers.RemoveAccount)
 	v1.DELETE("/sign-out", controllers.SignOut)
+	v1.GET("/health", controllers.HealthCheck)
+
+	// Subscription is now handled inside NatsConnect
+	if err := helpers.NatsConnect(); err != nil {
+		log.Fatalf("Failed to connect to NATS: %v", err)
+	}
 
 	// start server
-	_, err := fmt.Fprintf(os.Stdout, "Server started on port %s\n", port)
-	if err != nil {
-		log.Fatalln("Error writing to stdout")
+	go func() {
+		// Database connection
+		models.DBConnect()
+
+		_, err := fmt.Fprintf(os.Stdout, "Server started on port %s\n", port)
+		if err != nil {
+			log.Fatalln("Error writing to stdout")
+		}
+		// service connections
+		if err := s.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+
+	// Wait for the interrupt signal to gracefully shut down the server with
+	// a timeout of 5 seconds.
+	quit := make(chan os.Signal, 1)
+	// kill (no params) by default sends syscall.SIGTERM
+	// kill -2 is syscall.SIGINT
+	// kill -9 is syscall.SIGKILL but can't be caught, so don't need to add it
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	fmt.Println("Shutdown Server ...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Drain NATS connection on shutdown
+	if err := helpers.DrainNatsConnection(); err != nil {
+		fmt.Printf("Error draining NATS connection: %v\n", err)
+	} else {
+		fmt.Println("NATS connection drained successfully")
 	}
-	log.Fatalln(s.ListenAndServe())
+
+	if err := s.Shutdown(ctx); err != nil {
+		log.Println("Server Shutdown:", err)
+	}
+	// catching ctx.Done(). timeout of 5 seconds.
+	models.DB.Close()
+	<-ctx.Done()
+	fmt.Println("Server exiting")
 }
