@@ -103,7 +103,7 @@ type ProducerMessage struct {
 func (p *ProducerMessage) WalletEvent() (*nats.Msg, error) {
 	msg, err := nc.Request(p.Subject, []byte(p.Data), time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to publish message to create wallet: %v", err)
+		return nil, fmt.Errorf("unable to publish message to create wallet: %v", err)
 	}
 	return msg, nil
 }
