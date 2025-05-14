@@ -39,10 +39,10 @@ FROM alpine:latest
 WORKDIR /app
 
 # Copy only the necessary binary from the builder stage
-COPY --from=builder /app/feeti-auth /app/
+COPY --from=builder /app/auth-user /app/
 
 # Expose the port for the application
 EXPOSE 4000
 
 # Run the Go binary
-CMD ["/app/feeti-auth"]
+CMD ["/app/auth-user"]
