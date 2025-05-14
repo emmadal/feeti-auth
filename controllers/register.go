@@ -58,11 +58,6 @@ func Register(c *gin.Context) {
 		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to request wallet creation", err)
 		return
 	}
-	if !response.Success {
-		_ = user.RollbackUser()
-		helpers.HandleError(c, http.StatusUnprocessableEntity, response.Error, nil)
-		return
-	}
 
 	_ = json.Unmarshal(natsMsg.Data, &response)
 

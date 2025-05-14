@@ -1,6 +1,6 @@
 module github.com/emmadal/feeti-backend-user
 
-go 1.24.2
+go 1.24.3
 
 require (
 	github.com/emmadal/feeti-module v0.0.0-20250415171343-af12d3ddc8e9

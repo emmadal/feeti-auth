@@ -104,7 +104,7 @@ func Login(c *gin.Context) {
 
 	// publish a request to get wallet data
 	pMessage := helpers.ProducerMessage{
-		Subject: "wallet.get",
+		Subject: "wallet.balance",
 		Data:    fmt.Sprintf("%d", user.ID),
 	}
 	resp, err := pMessage.WalletEvent()
