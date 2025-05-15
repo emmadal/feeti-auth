@@ -157,7 +157,8 @@ jobs:
             ports:
             - port: 3000
               targetPort: 3000
-            type: ClusterIP
+              nodePort: 30000
+            type: NodePort
           EOF
           
           # Generate auth-deployment.yaml - using locally available image

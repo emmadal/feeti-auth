@@ -77,13 +77,18 @@ func NatsConnect() error {
 		}
 		fmt.Println("Successfully connected to NATS")
 
-		// Create a "keep-alive" subscription to prevent the connection from closing
-		_, err := nc.Subscribe("keep-alive", func(msg *nats.Msg) {
-			// Just a fake handler to keep the connection alive
-			log.Println("Received keep-alive message")
-		})
-		if err != nil {
-			fmt.Printf("Failed to create keep-alive subscription: %v\n", err)
+		if connectErr == nil {
+			// Create a "keep-alive" subscription to prevent the connection from closing
+			_, err := nc.Subscribe("keep-alive", func(msg *nats.Msg) {
+				startTime := time.Now()
+				// Just a fake handler to keep the connection alive
+				fmt.Printf("Keep-alive message received in %v\n", time.Since(startTime))
+				msg.Respond([]byte("OK"))
+			})
+			if err != nil {
+				fmt.Printf("Failed to subscribe to subject: %v\n", err)
+				return
+			}
 		}
 	})
 
