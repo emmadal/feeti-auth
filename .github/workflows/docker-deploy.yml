@@ -318,7 +318,7 @@ jobs:
               kind: Deployment
               name: auth-service
             minReplicas: 1
-            maxReplicas: 5
+            maxReplicas: 4
             metrics:
             - type: Resource
               resource:

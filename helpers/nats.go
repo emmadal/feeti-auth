@@ -79,7 +79,7 @@ func NatsConnect() error {
 
 		if connectErr == nil {
 			// Create a "keep-alive" subscription to prevent the connection from closing
-			_, err := nc.Subscribe("keep-alive", func(msg *nats.Msg) {
+			sub, err := nc.Subscribe("keep-alive", func(msg *nats.Msg) {
 				startTime := time.Now()
 				// Just a fake handler to keep the connection alive
 				fmt.Printf("Keep-alive message received in %v\n", time.Since(startTime))
@@ -88,6 +88,10 @@ func NatsConnect() error {
 			if err != nil {
 				fmt.Printf("Failed to subscribe to subject: %v\n", err)
 				return
+			}
+			// Keep subscription active - don't auto-unsubscribe
+			if err := sub.SetPendingLimits(-1, -1); err != nil {
+				fmt.Printf("Failed to set pending limits: %v\n", err)
 			}
 		}
 	})
