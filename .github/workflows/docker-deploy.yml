@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-and-transfer:
-    name: Build and Transfer Docker Image
+    name: Build Image
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.image_tag.outputs.tag }}
@@ -48,7 +48,7 @@ jobs:
       - name: Load Docker image on VPS
         run: |
           # Connect to VPS and load the image
-          ssh -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+          ssh -o StrictHostKeyChecking=no -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
             # Load the Docker image
             docker load < /tmp/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
             
@@ -58,25 +58,15 @@ jobs:
           "
 
   deploy:
-    name: Deploy to Kubernetes
+    name: Deployment
     needs: build-and-transfer
     runs-on: ubuntu-latest
     env:
       IMAGE_TAG: ${{ needs.build-and-transfer.outputs.image_tag }}
       IMAGE_PATH: feeti-auth-service:${{ needs.build-and-transfer.outputs.image_tag }}
     steps:
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'v1.28.0'  # Use a compatible version with your cluster
-
-      - name: Configure Kubernetes cluster
-        id: kubeconfig
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-          kubectl cluster-info || { echo "Failed to connect to cluster"; exit 1; }
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Generate Kubernetes manifests
         run: |
@@ -343,19 +333,24 @@ jobs:
                     restartPolicy: OnFailure
           EOF
 
-      - name: Run deployment on VPS via SSH
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Deploy to Kubernetes on VPS
         run: |
           # Connect to VPS and apply Kubernetes manifests
-          ssh -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+          ssh -o StrictHostKeyChecking=no -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
             # Create a temporary directory
             mkdir -p /tmp/k8s-deploy-${{ github.run_id }}
           "
           
           # Copy the K8s manifests to VPS
-          scp -P 22 -r ./k8s/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/k8s-deploy-${{ github.run_id }}/
+          scp -o StrictHostKeyChecking=no -P 22 -r ./k8s/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/k8s-deploy-${{ github.run_id }}/
           
           # Apply the manifests on the VPS
-          ssh -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+          ssh -o StrictHostKeyChecking=no -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
             cd /tmp/k8s-deploy-${{ github.run_id }}
             
             # Create namespace if it doesn't exist
