@@ -48,7 +48,7 @@ jobs:
       - name: Load Docker image on VPS
         run: |
           # Connect to VPS and load the image
-          ssh -o StrictHostKeyChecking=no -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
             # Load the Docker image
             docker load < /tmp/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
             
@@ -65,7 +65,7 @@ jobs:
             # Tag latest as well
             docker tag localhost:5000/feeti-auth-service:${{ steps.image_tag.outputs.tag }} localhost:5000/feeti-auth-service:latest
             docker push localhost:5000/feeti-auth-service:latest
-          "
+          ENDSSH
 
   deploy:
     name: Deployment
@@ -165,8 +165,10 @@ jobs:
           metadata:
             name: auth-service
             namespace: feeti-auth
+            annotations:
+              kubernetes.io/change-cause: "Deployed by GitHub Actions - ${IMAGE_TAG}"
           spec:
-            replicas: 2
+            replicas: 1
             selector:
               matchLabels:
                 app: auth-service
@@ -236,6 +238,14 @@ jobs:
                       secretKeyRef:
                         name: auth-secrets
                         key: NEW_RELIC_LICENSE_KEY
+                  startupProbe:
+                    httpGet:
+                      path: /api/v1/healthz
+                      port: 3000
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 30
                   livenessProbe:
                     httpGet:
                       path: /api/v1/healthz
@@ -295,8 +305,8 @@ jobs:
               apiVersion: apps/v1
               kind: Deployment
               name: auth-service
-            minReplicas: 2
-            maxReplicas: 5
+            minReplicas: 1
+            maxReplicas: 3
             metrics:
             - type: Resource
               resource:
@@ -349,38 +359,37 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
-      - name: Deploy to Kubernetes on VPS
+      - name: Clean up old deployments
         run: |
-          # Connect to VPS and apply Kubernetes manifests
-          ssh -o StrictHostKeyChecking=no -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-            # Create a temporary directory
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            # Delete all existing deployments and pods
+            echo "Cleaning up old deployments..."
+            kubectl get namespace feeti-auth >/dev/null 2>&1 && {
+              kubectl delete deployment --all -n feeti-auth
+              kubectl delete pods --all -n feeti-auth --force --grace-period=0
+              sleep 10
+            } || echo "Namespace does not exist yet"
+          ENDSSH
+
+      - name: Apply Kubernetes manifests and configure
+        run: |
+          # Create a temporary directory for manifests
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
             mkdir -p /tmp/k8s-deploy-${{ github.run_id }}
-          "
+          ENDSSH
           
           # Copy the K8s manifests to VPS
-          scp -o StrictHostKeyChecking=no -P 22 -r ./k8s/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/k8s-deploy-${{ github.run_id }}/
+          scp -o StrictHostKeyChecking=no -r ./k8s/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/k8s-deploy-${{ github.run_id }}/
           
           # Apply the manifests on the VPS
-          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
             cd /tmp/k8s-deploy-${{ github.run_id }}
             
             # Create namespace if it doesn't exist
-            kubectl get namespace feeti-auth || kubectl apply -f namespace.yaml
+            kubectl get namespace feeti-auth >/dev/null 2>&1 || kubectl apply -f namespace.yaml
             kubectl config set-context --current --namespace=feeti-auth
             
-            # Apply ConfigMap with correct PORT value
-            cat <<EOF > configmap.yaml
-            apiVersion: v1
-            kind: ConfigMap
-            metadata:
-              name: auth-config
-              namespace: feeti-auth
-            data:
-              NODE_ENV: "production"
-              SERVICE_NAME: "auth-service"
-              PORT: ":3000"
-              LOG_LEVEL: "info"
-            EOF
+            # Apply ConfigMap
             kubectl apply -f configmap.yaml
             
             # Create or update Kubernetes secrets
@@ -396,64 +405,59 @@ jobs:
               --from-literal=PORT=':3000' \
               --dry-run=client -o yaml | kubectl apply -f -
             
-            # Apply Kubernetes manifests in order
+            # Apply the rest of the manifests
             kubectl apply -f network-policy.yaml
             kubectl apply -f auth-service.yaml
+            
+            # Apply the deployment last (after services and everything else is ready)
             kubectl apply -f auth-deployment.yaml
+            
+            # Apply ingress and other resources
             kubectl apply -f auth-ingress.yaml
             kubectl apply -f auth-hpa.yaml
             kubectl apply -f health-check.yaml
-          "
-          
-          # Debug the pod crash issues
-          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-            # Delete any previous failed pods to force a clean deployment
-            kubectl delete pods -n feeti-auth --selector=app=auth-service
-            
-            # Wait for new pods to be created
-            echo 'Waiting for pods to be created...'
+          ENDSSH
+
+      - name: Monitor deployment
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            # Wait for deployment to start
+            echo "Waiting for pods to be created..."
             sleep 20
             
-            # Check pod logs for errors
-            echo 'Checking pod logs for errors:'
-            POD=\$(kubectl get pods -n feeti-auth -l app=auth-service -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo '')
-            if [ -n \"\$POD\" ]; then
-              echo \"Pod found: \$POD\"
-              kubectl logs -n feeti-auth \$POD --previous || echo \"No previous logs available\"
-              kubectl logs -n feeti-auth \$POD || echo \"No logs available\"
-              
-              echo \"Pod environment variables:\"
-              kubectl exec -n feeti-auth \$POD -c auth-service -- env || echo \"Could not get environment variables\"
-            else
-              echo \"No pods found yet\"
-            fi
+            # Show all resources in the namespace
+            echo "Current resources in namespace:"
+            kubectl get all -n feeti-auth
             
-            # Check events in the namespace
-            echo 'Namespace events:'
-            kubectl get events -n feeti-auth --sort-by='.lastTimestamp'
+            # Check pod logs
+            echo "Checking pod logs for errors:"
+            POD=$(kubectl get pods -n feeti-auth -l app=auth-service -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo '')
+            if [ -n "$POD" ]; then
+              echo "Pod found: $POD"
+              echo "Pod logs:"
+              kubectl logs -n feeti-auth $POD || echo "No logs available"
+              
+              echo "Pod environment variables:"
+              kubectl exec -n feeti-auth $POD -c auth-service -- env 2>/dev/null || echo "Could not get environment variables"
+            else
+              echo "No pods found yet"
+            fi
             
             # Wait for deployment to complete with increased timeout
-            echo 'Waiting for deployment to complete...'
+            echo "Waiting for deployment to complete..."
             kubectl rollout status deployment/auth-service --timeout=600s || true
             
-            # Check if pods are running
-            PODS_RUNNING=\$(kubectl get pods -l app=auth-service -n feeti-auth -o jsonpath='{.items[*].status.phase}' | grep -c 'Running' || echo 0)
-            echo \"Found \$PODS_RUNNING running pods\"
-            
-            # If no pods running, describe all pods
-            if [ \"\$PODS_RUNNING\" -lt 1 ]; then
-              echo \"No pods running, describing all pods:\"
-              kubectl describe pods -n feeti-auth -l app=auth-service
-            fi
+            # Get final status
+            echo "Final pod status:"
+            kubectl get pods -n feeti-auth
             
             # Check service endpoints
-            echo 'Verifying service endpoints...'
+            echo "Service endpoints:"
             kubectl get endpoints auth-service -n feeti-auth
-          "
-          
-          # Clean up temporary files
-          cd / && rm -rf /tmp/k8s-deploy-${{ github.run_id }}
-          "
+            
+            # Clean up temporary files
+            cd / && rm -rf /tmp/k8s-deploy-${{ github.run_id }}
+          ENDSSH
 
   notify:
     name: Send Notification
