@@ -33,8 +33,7 @@ jobs:
           
           # Save image to a tarball
           mkdir -p ./docker-images
-          docker save feeti-auth-service:${{ steps.image_tag.outputs.tag }} | gzip > 
-          ./docker-images/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
+          docker save feeti-auth-service:${{ steps.image_tag.outputs.tag }} | gzip > ./docker-images/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
 
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.5.4
@@ -44,8 +43,7 @@ jobs:
       - name: Transfer Docker image to VPS
         run: |
           # Transfer the image file to VPS
-          scp -o StrictHostKeyChecking=no ./docker-images/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
-          ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/
+          scp -o StrictHostKeyChecking=no ./docker-images/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/
 
       - name: Load Docker image on VPS
         run: |
@@ -376,7 +374,7 @@ jobs:
               --from-literal=NEW_RELIC_LICENSE_KEY='${{ secrets.NEW_RELIC_LICENSE_KEY }}' \
               --from-literal=DATABASE_URL='${{ secrets.DATABASE_URL }}' \
               --from-literal=NATS_URL='${{ secrets.NATS_URL }}' \
-              --from-literal=NATS_URL='${{ secrets.GIN_MODE }}' \
+              --from-literal=GIN_MODE='${{ secrets.GIN_MODE }}' \
               --from-literal=PORT='${{ secrets.PORT }}' \
               --dry-run=client -o yaml | kubectl apply -f -
             
