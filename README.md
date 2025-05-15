@@ -38,8 +38,4 @@ This service is responsible for managing user accounts and authentication for th
 ### Building the Service
 
 1. Run `go build main.go` to build the service
-2. Run `docker build -t feeti-user-service .` to build a Docker image of the service
-
-## Contributing
-
-Contributions are welcome! Please open a pull request with your changes.
+2. Run `docker build -t feeti-auth-service .` to build a Docker image of the service
