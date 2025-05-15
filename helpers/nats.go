@@ -75,11 +75,6 @@ func NatsConnect() error {
 			return
 		}
 		fmt.Println("Successfully connected to NATS")
-
-		// Only start subscribers if everything is set up correctly
-		if connectErr == nil {
-
-		}
 	})
 
 	return connectErr
