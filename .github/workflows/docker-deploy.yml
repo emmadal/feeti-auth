@@ -52,6 +52,9 @@ jobs:
             # Load the Docker image
             docker load < /tmp/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
             
+            # Remove the image file
+            rm /tmp/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
+            
             # Tag the image for local use
             docker tag feeti-auth-service:${{ steps.image_tag.outputs.tag }} feeti-auth-service:latest
 
@@ -251,10 +254,10 @@ jobs:
             name: auth-ingress
             namespace: feeti-auth
             annotations:
-              kubernetes.io/ingress.class: nginx
               nginx.ingress.kubernetes.io/ssl-redirect: "true"
               cert-manager.io/cluster-issuer: letsencrypt-prod
           spec:
+            ingressClassName: nginx
             tls:
             - hosts:
               - auth.feeti.app
@@ -350,7 +353,7 @@ jobs:
           scp -o StrictHostKeyChecking=no -P 22 -r ./k8s/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/k8s-deploy-${{ github.run_id }}/
           
           # Apply the manifests on the VPS
-          ssh -o StrictHostKeyChecking=no -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
             cd /tmp/k8s-deploy-${{ github.run_id }}
             
             # Create namespace if it doesn't exist
@@ -380,7 +383,10 @@ jobs:
             kubectl apply -f auth-ingress.yaml
             kubectl apply -f auth-hpa.yaml
             kubectl apply -f health-check.yaml
-            
+          "
+          
+          # Separate step for monitoring deployment - not subject to same timeout
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
             # Wait for deployment to complete
             echo 'Waiting for deployment to complete...'
             kubectl rollout status deployment/auth-service --timeout=300s
