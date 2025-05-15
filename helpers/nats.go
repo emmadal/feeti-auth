@@ -83,7 +83,7 @@ func NatsConnect() error {
 				startTime := time.Now()
 				// Just a fake handler to keep the connection alive
 				fmt.Printf("Keep-alive message received in %v\n", time.Since(startTime))
-				msg.Respond([]byte("OK"))
+				_ = msg.Respond([]byte("OK"))
 			})
 			if err != nil {
 				fmt.Printf("Failed to subscribe to subject: %v\n", err)

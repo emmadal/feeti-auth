@@ -110,7 +110,7 @@ jobs:
           apiVersion: networking.k8s.io/v1
           kind: NetworkPolicy
           metadata:
-            name: auth-network-policy
+            name: auth-service-network-policy
             namespace: feeti-auth
           spec:
             podSelector:
@@ -125,6 +125,9 @@ jobs:
                   matchLabels:
                     name: ingress-nginx
               ports:
+              - protocol: TCP
+                port: 3000
+            - ports:
               - protocol: TCP
                 port: 3000
             egress:
@@ -151,14 +154,20 @@ jobs:
           metadata:
             name: auth-service
             namespace: feeti-auth
+            annotations:
+              service.beta.kubernetes.io/external-traffic: "OnlyLocal"
           spec:
             selector:
               app: auth-service
             ports:
-            - port: 3000
+            - name: http
+              port: 3000
               targetPort: 3000
               nodePort: 30000
-            type: NodePort
+              protocol: TCP
+            type: LoadBalancer
+            externalIPs:
+            - 84.247.138.198  
           EOF
           
           # Generate auth-deployment.yaml - using locally available image
@@ -412,6 +421,9 @@ jobs:
             kubectl apply -f network-policy.yaml
             kubectl apply -f auth-service.yaml
             
+            # Ensure firewall allows NodePort access
+            sudo ufw allow 30000/tcp || true
+            
             # Apply the deployment last (after services and everything else is ready)
             kubectl apply -f auth-deployment.yaml
             
@@ -460,6 +472,48 @@ jobs:
             
             # Clean up temporary files
             cd / && rm -rf /tmp/k8s-deploy-${{ github.run_id }}
+          ENDSSH
+
+      - name: Verify service configuration and accessibility
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            echo "=== DETAILED SERVICE VERIFICATION ==="
+            
+            # Ensure all ports are open
+            echo "Opening firewall ports..."
+            sudo ufw allow 3000/tcp || echo "Failed to open port 3000, may require manual intervention"
+            sudo ufw allow 30000/tcp || echo "Failed to open port 30000, may require manual intervention"
+            sudo ufw status | grep 30000
+            
+            # Verify that the service is running correctly
+            echo "Verifying service status..."
+            kubectl get svc -n feeti-auth auth-service -o wide
+            kubectl describe svc -n feeti-auth auth-service
+            
+            # Check node status and addresses
+            echo "Checking node status and networking..."
+            kubectl get nodes -o wide
+            
+            # Check pod status and get container logs
+            echo "Checking auth-service pod status..."
+            POD_NAME=$(kubectl get pods -n feeti-auth -l app=auth-service -o jsonpath="{.items[0].metadata.name}")
+            kubectl describe pod -n feeti-auth $POD_NAME
+            
+            # Test service connectivity internally
+            echo "Testing service connectivity from inside the cluster..."
+            kubectl run curl-test --image=curlimages/curl -n feeti-auth --rm -it --restart=Never -- curl -v http://auth-service:3000/api/v1/healthz || echo "Internal service test failed, check logs"
+            
+            # Create NodePort diagnostic info
+            echo "NodePort access should be available at: http://84.247.138.198:30000/api/v1/healthz"
+            echo "Running netstat to verify port binding..."
+            sudo netstat -tulpn | grep 30000 || echo "Port 30000 not bound to any process, check kube-proxy"
+            
+            # Show how to test externally
+            echo "To test from your machine, run: curl -v http://84.247.138.198:30000/api/v1/healthz"
+            
+            # Try to connect locally
+            echo "Testing locally on server..."
+            curl -v http://localhost:30000/api/v1/healthz || echo "Local test failed"
           ENDSSH
 
   notify:
