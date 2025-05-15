@@ -140,6 +140,8 @@ jobs:
                 port: 5432  # PostgreSQL
               - protocol: TCP
                 port: 4222  # NATS
+              - protocol: TCP
+                port: 3000  # HTTP
           EOF
           
           # Generate auth-service.yaml
@@ -306,7 +308,7 @@ jobs:
               kind: Deployment
               name: auth-service
             minReplicas: 1
-            maxReplicas: 3
+            maxReplicas: 5
             metrics:
             - type: Resource
               resource:

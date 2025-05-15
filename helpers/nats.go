@@ -56,6 +56,7 @@ func NatsConnect() error {
 			nats.RetryOnFailedConnect(true),
 			nats.MaxReconnects(config.MaxReconnects),
 			nats.ReconnectWait(config.ReconnectWait),
+			nats.PingInterval(20*time.Second), // Add regular ping to keep the connection alive
 			nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
 				log.Println("NATS disconnected")
 			}),
@@ -75,6 +76,15 @@ func NatsConnect() error {
 			return
 		}
 		fmt.Println("Successfully connected to NATS")
+
+		// Create a "keep-alive" subscription to prevent the connection from closing
+		_, err := nc.Subscribe("keep-alive", func(msg *nats.Msg) {
+			// Just a fake handler to keep the connection alive
+			log.Println("Received keep-alive message")
+		})
+		if err != nil {
+			fmt.Printf("Failed to create keep-alive subscription: %v\n", err)
+		}
 	})
 
 	return connectErr

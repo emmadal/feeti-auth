@@ -62,7 +62,7 @@ func main() {
 	server.Use(middleware.Recover())
 
 	// Set api version group
-	v1 := server.Group("/v1/api")
+	v1 := server.Group("/api/v1")
 
 	// initialize server
 	s := &http.Server{
@@ -80,11 +80,11 @@ func main() {
 	v1.PUT("/update-pin", controllers.UpdatePin)
 	v1.DELETE("/remove-account", controllers.RemoveAccount)
 	v1.DELETE("/sign-out", controllers.SignOut)
-	v1.GET("/health", controllers.HealthCheck)
+	v1.GET("/healthz", controllers.HealthCheck)
 
 	// Subscription is now handled inside NatsConnect
 	if err := helpers.NatsConnect(); err != nil {
-		log.Fatalf("Failed to connect to NATS: %v", err)
+		log.Printf("Failed to connect to NATS: %v\n", err)
 	}
 
 	// start server
