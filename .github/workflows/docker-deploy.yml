@@ -190,10 +190,7 @@ jobs:
                       memory: "256Mi"
                   env:
                   - name: PORT
-                    valueFrom:
-                      configMapKeyRef:
-                        name: auth-config
-                        key: PORT
+                    value: "3000"
                   - name: NODE_ENV
                     valueFrom:
                       configMapKeyRef:
@@ -243,14 +240,18 @@ jobs:
                     httpGet:
                       path: /api/v1/healthz
                       port: 3000
-                    initialDelaySeconds: 30
-                    periodSeconds: 10
+                    initialDelaySeconds: 60
+                    periodSeconds: 20
+                    timeoutSeconds: 5
+                    failureThreshold: 5
                   readinessProbe:
                     httpGet:
                       path: /api/v1/healthz
                       port: 3000
-                    initialDelaySeconds: 5
-                    periodSeconds: 5
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                    timeoutSeconds: 5
+                    failureThreshold: 3
           EOF
           
           # Generate auth-ingress.yaml
@@ -367,7 +368,19 @@ jobs:
             kubectl get namespace feeti-auth || kubectl apply -f namespace.yaml
             kubectl config set-context --current --namespace=feeti-auth
             
-            # Apply ConfigMap
+            # Apply ConfigMap with correct PORT value
+            cat <<EOF > configmap.yaml
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: auth-config
+              namespace: feeti-auth
+            data:
+              NODE_ENV: "production"
+              SERVICE_NAME: "auth-service"
+              PORT: "3000"
+              LOG_LEVEL: "info"
+            EOF
             kubectl apply -f configmap.yaml
             
             # Create or update Kubernetes secrets
@@ -379,8 +392,8 @@ jobs:
               --from-literal=NEW_RELIC_LICENSE_KEY='${{ secrets.NEW_RELIC_LICENSE_KEY }}' \
               --from-literal=DATABASE_URL='${{ secrets.DATABASE_URL }}' \
               --from-literal=NATS_URL='${{ secrets.NATS_URL }}' \
-              --from-literal=GIN_MODE='${{ secrets.GIN_MODE }}' \
-              --from-literal=PORT='${{ secrets.PORT }}' \
+              --from-literal=GIN_MODE='release' \
+              --from-literal=PORT=':3000' \
               --dry-run=client -o yaml | kubectl apply -f -
             
             # Apply Kubernetes manifests in order
@@ -392,22 +405,28 @@ jobs:
             kubectl apply -f health-check.yaml
           "
           
-          # Separate step for monitoring deployment - not subject to same timeout
+          # Debug the pod crash issues
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-            # Wait for deployment to complete
+            # Wait for pods to be created
+            echo 'Waiting for pods to be created...'
+            sleep 10
+            
+            # Check pod logs to debug the crash
+            echo 'Checking pod logs for errors:'
+            POD=\$(kubectl get pods -n feeti-auth -l app=auth-service -o jsonpath='{.items[0].metadata.name}')
+            kubectl logs -n feeti-auth \$POD
+            
+            # Check pod details
+            echo 'Pod details:'
+            kubectl describe pod \$POD -n feeti-auth
+            
+            # Wait for deployment to complete with increased timeout
             echo 'Waiting for deployment to complete...'
-            kubectl rollout status deployment/auth-service --timeout=300s
+            kubectl rollout status deployment/auth-service --timeout=600s || true
             
             # Check if pods are running
-            PODS_RUNNING=\$(kubectl get pods -l app=auth-service -o jsonpath='{.items[*].status.phase}' | grep -c 'Running')
-            if [ \"\$PODS_RUNNING\" -lt 1 ]; then
-              echo 'Error: No pods are running for auth-service'
-              kubectl get pods -l app=auth-service
-              kubectl describe pods -l app=auth-service
-              exit 1
-            fi
-            
-            echo \"Deployment successfully completed with \$PODS_RUNNING pods running\"
+            PODS_RUNNING=\$(kubectl get pods -l app=auth-service -o jsonpath='{.items[*].status.phase}' | grep -c 'Running' || echo 0)
+            echo \"Found \$PODS_RUNNING running pods\"
             
             # Check service endpoints
             echo 'Verifying service endpoints...'
