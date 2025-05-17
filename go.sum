@@ -11,8 +11,8 @@ github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ3
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/emmadal/feeti-module v0.0.0-20250415171343-af12d3ddc8e9 h1:YYCDjxtQiztlVU+23iT4pVRJ5/vv0aJ20trgt4QeWqI=
-github.com/emmadal/feeti-module v0.0.0-20250415171343-af12d3ddc8e9/go.mod h1:VOfiGQdDRkRMfXHJ34v998W62+v7PEaNDdys42MGIZ8=
+github.com/emmadal/feeti-module v0.0.0-20250517162626-98bb66e34e6e h1:CezQAVaUnZS4gjss5B1iRHs5LHDp8cTGIat67IkeN0M=
+github.com/emmadal/feeti-module v0.0.0-20250517162626-98bb66e34e6e/go.mod h1:ysflMj+DdFHikvf5YsibCidlAX08bT4LdUvbQD0kdxs=
 github.com/gabriel-vasile/mimetype v1.4.9 h1:5k+WDwEsD9eTLL8Tz3L0VnmVh9QxGjRmjBvAG7U/oYY=
 github.com/gabriel-vasile/mimetype v1.4.9/go.mod h1:WnSQhFKJuBlRyLiKohA/2DtIlPFAbguNaG7QCHcyGok=
 github.com/gin-contrib/cors v1.7.5 h1:cXC9SmofOrRg0w9PigwGlHG3ztswH6bqq4vJVXnvYMk=

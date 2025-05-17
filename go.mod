@@ -3,7 +3,6 @@ module github.com/emmadal/feeti-backend-user
 go 1.24.3
 
 require (
-	github.com/emmadal/feeti-module v0.0.0-20250415171343-af12d3ddc8e9
 	github.com/gin-contrib/cors v1.7.5
 	github.com/gin-contrib/gzip v1.2.3
 	github.com/gin-contrib/timeout v1.0.2
@@ -24,6 +23,7 @@ require (
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/emmadal/feeti-module v0.0.0-20250517162626-98bb66e34e6e // indirect
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect

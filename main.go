@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"log"
 	"net/http"
 	"os"
@@ -75,12 +76,13 @@ func main() {
 	}
 
 	// v1 routes
+	jwtKey := []byte(os.Getenv("JWT_KEY"))
 	v1.POST("/register", controllers.Register)
 	v1.POST("/login", controllers.Login)
-	v1.PUT("/update-pin", controllers.UpdatePin)
-	v1.DELETE("/remove-account", controllers.RemoveAccount)
-	v1.DELETE("/sign-out", controllers.SignOut)
 	v1.GET("/healthz", controllers.HealthCheck)
+	v1.PUT("/update-pin", jwt.AuthGin(jwtKey), controllers.UpdatePin)
+	v1.DELETE("/remove-account", jwt.AuthGin(jwtKey), controllers.RemoveAccount)
+	v1.DELETE("/sign-out", jwt.AuthGin(jwtKey), controllers.SignOut)
 
 	// Subscription is now handled inside NatsConnect
 	if err := helpers.NatsConnect(); err != nil {
@@ -116,10 +118,10 @@ func main() {
 	defer cancel()
 
 	// Drain NATS connection on shutdown
-	if err := helpers.DrainNatsConnection(); err != nil {
-		fmt.Printf("Error draining NATS connection: %v\n", err)
+	if err := helpers.DrainNatsConnection(context.Background()); err != nil {
+		log.Printf("Error draining NATS connection: %v\n", err)
 	} else {
-		fmt.Println("NATS connection drained successfully")
+		log.Println("NATS connection drained successfully")
 	}
 
 	if err := s.Shutdown(ctx); err != nil {
