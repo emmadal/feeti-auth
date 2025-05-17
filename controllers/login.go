@@ -3,11 +3,9 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"golang.org/x/sync/errgroup"
 	"net/http"
 	"os"
-	"time"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
@@ -21,7 +19,7 @@ const MaxLoginAttempts = 3
 // Login handler to sign in a user
 func Login(c *gin.Context) {
 	body := models.UserLogin{}
-	var response helpers.RequestResponse
+	var response helpers.ResponsePayload
 	natsMsg := make(chan *nats.Msg, 1)
 
 	// Validate the request body
@@ -60,11 +58,11 @@ func Login(c *gin.Context) {
 		group.Go(
 			func() error {
 				// send a nats message to lock wallet
-				pMessage := &helpers.ProducerMessage{
+				pMessage := helpers.RequestPayload{
 					Subject: "wallet.lock",
 					Data:    fmt.Sprintf("%d", userStruct.ID),
 				}
-				resp, err := pMessage.WalletEvent()
+				resp, err := pMessage.PublishEvent()
 				if err != nil {
 					return err
 				}
@@ -103,11 +101,11 @@ func Login(c *gin.Context) {
 	}
 
 	// publish a request to get wallet data
-	pMessage := helpers.ProducerMessage{
+	pMessage := helpers.RequestPayload{
 		Subject: "wallet.balance",
 		Data:    fmt.Sprintf("%d", user.ID),
 	}
-	resp, err := pMessage.WalletEvent()
+	resp, err := pMessage.PublishEvent()
 	if err != nil {
 		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to process wallet", err)
 		return
@@ -152,9 +150,7 @@ func Login(c *gin.Context) {
 	}
 
 	// Set cookie
-	domain := os.Getenv("HOST")
-	//secure := os.Getenv("GIN_MODE") == "release"
-	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, false, true)
+	jwt.SetSecureCookie(c, token, os.Getenv("HOST"), false)
 
 	// Return success response
 	helpers.HandleSuccessData(

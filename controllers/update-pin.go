@@ -1,19 +1,18 @@
 package controllers
 
 import (
-	jwt "github.com/emmadal/feeti-module/jwt_module"
-	"net/http"
-	"os"
-	"time"
-
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
+	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
+	"net/http"
+	"os"
 )
 
 func UpdatePin(c *gin.Context) {
 	body := models.UpdatePin{}
 
+	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
 		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
 		return
@@ -54,9 +53,7 @@ func UpdatePin(c *gin.Context) {
 	}
 
 	// Replace old token with new one
-	domain := os.Getenv("HOST")
-	//secure := os.Getenv("GIN_MODE") == "release"
-	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, false, true)
+	jwt.SetSecureCookie(c, token, os.Getenv("HOST"), false)
 
 	go helpers.SendPinMessage(body.PhoneNumber)
 

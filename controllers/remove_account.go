@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"net/http"
 	"os"
 
@@ -14,7 +15,7 @@ import (
 // RemoveAccount remove user account
 func RemoveAccount(c *gin.Context) {
 	body := models.RemoveUserAccount{}
-	var response helpers.RequestResponse
+	var response helpers.ResponsePayload
 
 	// Validate request body
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -36,11 +37,11 @@ func RemoveAccount(c *gin.Context) {
 	}
 
 	// publish a request to get wallet data
-	pMessage := helpers.ProducerMessage{
+	pMessage := helpers.RequestPayload{
 		Subject: "wallet.lock",
 		Data:    fmt.Sprintf("%d", user.ID),
 	}
-	resp, err := pMessage.WalletEvent()
+	resp, err := pMessage.PublishEvent()
 	if err != nil {
 		helpers.HandleError(c, http.StatusInternalServerError, "Unable to process wallet", err)
 		return
@@ -60,7 +61,7 @@ func RemoveAccount(c *gin.Context) {
 	}
 
 	// Send success response and delete cookie
-	c.SetCookie("ftk", "", -1, "/", os.Getenv("HOST"), false, true)
+	jwt.ClearAuthCookie(c, os.Getenv("HOST"))
 
 	// Send success response
 	helpers.HandleSuccess(c, "Account removed successfully")

@@ -3,20 +3,18 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"os"
-	"time"
-
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
 	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
+	"net/http"
+	"os"
 )
 
 // Register handles user registration
 func Register(c *gin.Context) {
 	body := models.User{}
-	var response helpers.RequestResponse
+	var response helpers.ResponsePayload
 
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -46,13 +44,13 @@ func Register(c *gin.Context) {
 	}
 
 	// create a user wallet
-	pMessage := helpers.ProducerMessage{
+	pMessage := helpers.RequestPayload{
 		Subject: "wallet.create",
 		Data:    fmt.Sprintf("%d", user.ID),
 	}
 
 	// Send the initial wallet creation request
-	natsMsg, err := pMessage.WalletEvent()
+	natsMsg, err := pMessage.PublishEvent()
 	if err != nil {
 		_ = user.RollbackUser()
 		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to request wallet creation", err)
@@ -77,9 +75,7 @@ func Register(c *gin.Context) {
 	}
 
 	// Set cookie
-	domain := os.Getenv("HOST")
-	//secure := os.Getenv("GIN_MODE") == "release"
-	c.SetCookie("ftk", token, int(time.Now().Add(30*time.Minute).Unix()), "/", domain, false, true)
+	jwt.SetSecureCookie(c, token, os.Getenv("HOST"), false)
 
 	// Send success response
 	helpers.HandleSuccessData(
