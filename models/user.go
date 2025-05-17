@@ -218,7 +218,7 @@ func (user *User) RollbackUser() error {
 	defer func() {
 		_ = tx.Rollback(ctx)
 	}()
-	_, err = tx.Exec(ctx, `DELETE FROM users WHERE user_id = $1 AND is_active = true`, user.ID)
+	_, err = tx.Exec(ctx, `DELETE FROM users WHERE id = $1 `, user.ID)
 	if err != nil {
 		return err
 	}
