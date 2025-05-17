@@ -225,6 +225,11 @@ jobs:
                       secretKeyRef:
                         name: auth-secrets
                         key: NATS_URL
+                  - name: HOST
+                    valueFrom:
+                      secretKeyRef:
+                        name: auth-secrets
+                        key: HOST
                   - name: GIN_MODE
                     valueFrom:
                       secretKeyRef:
@@ -412,6 +417,7 @@ jobs:
               --from-literal=TWILIO_AUTH_TOKEN='${{ secrets.TWILIO_AUTH_TOKEN }}' \
               --from-literal=NEW_RELIC_LICENSE_KEY='${{ secrets.NEW_RELIC_LICENSE_KEY }}' \
               --from-literal=DATABASE_URL='${{ secrets.DATABASE_URL }}' \
+              --from-literal=DATABASE_URL='${{ secrets.HOST }}' \
               --from-literal=NATS_URL='${{ secrets.NATS_URL }}' \
               --from-literal=GIN_MODE='release' \
               --from-literal=PORT=':3000' \
