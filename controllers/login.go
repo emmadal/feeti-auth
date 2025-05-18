@@ -150,7 +150,7 @@ func Login(c *gin.Context) {
 	}
 
 	// Set cookie
-	jwt.SetSecureCookie(c, token, os.Getenv("HOST"), false)
+	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"), false)
 
 	// Return success response
 	helpers.HandleSuccessData(

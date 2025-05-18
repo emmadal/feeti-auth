@@ -10,7 +10,7 @@ import (
 
 func SignOut(c *gin.Context) {
 	// Delete cookie
-	jwt.ClearAuthCookie(c, os.Getenv("HOST"))
+	jwt.ClearAuthCookie(c, os.Getenv("HOST_URL"))
 
 	// Return success response
 	helpers.HandleSuccess(c, "Successfully signed out")

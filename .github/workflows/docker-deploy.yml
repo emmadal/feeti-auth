@@ -143,8 +143,6 @@ jobs:
                 port: 5432  # PostgreSQL
               - protocol: TCP
                 port: 4222  # NATS
-              - protocol: TCP
-                port: 3000  # HTTP
           EOF
           
           # Generate auth-service.yaml
@@ -225,11 +223,11 @@ jobs:
                       secretKeyRef:
                         name: auth-secrets
                         key: NATS_URL
-                  - name: HOST
+                  - name: HOST_URL
                     valueFrom:
                       secretKeyRef:
                         name: auth-secrets
-                        key: HOST
+                        key: HOST_URL
                   - name: GIN_MODE
                     valueFrom:
                       secretKeyRef:
@@ -378,20 +376,14 @@ jobs:
 
       - name: Clean up old deployments
         run: |
-          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
-            # Delete all existing deployments and pods
-            echo "Cleaning up old deployments..."
-            kubectl get namespace feeti-auth >/dev/null 2>&1 && {
-              kubectl delete deployment --all -n feeti-auth
-              kubectl delete pods --all -n feeti-auth --force --grace-period=0
-              sleep 10
-            } || echo "Namespace does not exist yet"
-          ENDSSH
+          echo "[SKIPPED] No longer deleting all deployments/pods to avoid downtime. Rolling updates will be used."
 
       - name: Apply Kubernetes manifests and configure
         run: |
+          set -euo pipefail
           # Create a temporary directory for manifests
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            set -euo pipefail
             mkdir -p /tmp/k8s-deploy-${{ github.run_id }}
           ENDSSH
           
@@ -400,6 +392,7 @@ jobs:
           
           # Apply the manifests on the VPS
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            set -euo pipefail
             cd /tmp/k8s-deploy-${{ github.run_id }}
             
             # Create namespace if it doesn't exist
@@ -417,26 +410,31 @@ jobs:
               --from-literal=TWILIO_AUTH_TOKEN='${{ secrets.TWILIO_AUTH_TOKEN }}' \
               --from-literal=NEW_RELIC_LICENSE_KEY='${{ secrets.NEW_RELIC_LICENSE_KEY }}' \
               --from-literal=DATABASE_URL='${{ secrets.DATABASE_URL }}' \
-              --from-literal=DATABASE_URL='${{ secrets.HOST }}' \
+              --from-literal=HOST_URL='${{ secrets.HOST_URL }}' \
               --from-literal=NATS_URL='${{ secrets.NATS_URL }}' \
               --from-literal=GIN_MODE='release' \
               --from-literal=PORT=':3000' \
               --dry-run=client -o yaml | kubectl apply -f -
             
-            # Apply the rest of the manifests
+            # Apply the rest of the manifests (rolling update)
             kubectl apply -f network-policy.yaml
             kubectl apply -f auth-service.yaml
-            
-            # Ensure firewall allows NodePort access
             sudo ufw allow 30000/tcp || true
-            
-            # Apply the deployment last (after services and everything else is ready)
             kubectl apply -f auth-deployment.yaml
-            
-            # Apply ingress and other resources
             kubectl apply -f auth-ingress.yaml
             kubectl apply -f auth-hpa.yaml
             kubectl apply -f health-check.yaml
+            
+            # Wait for rollout to complete
+            echo "Waiting for deployment to complete..."
+            if ! kubectl rollout status deployment/auth-service --timeout=600s; then
+              echo "Rollout failed, describing pods and events for diagnostics:"
+              kubectl get pods -n feeti-auth
+              kubectl describe deployment/auth-service -n feeti-auth || true
+              kubectl describe pods -n feeti-auth || true
+              kubectl get events -n feeti-auth --sort-by=.metadata.creationTimestamp | tail -20 || true
+              exit 1
+            fi
           ENDSSH
 
       - name: Monitor deployment

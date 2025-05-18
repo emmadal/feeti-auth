@@ -53,7 +53,7 @@ func UpdatePin(c *gin.Context) {
 	}
 
 	// Replace old token with new one
-	jwt.SetSecureCookie(c, token, os.Getenv("HOST"), false)
+	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"), false)
 
 	go helpers.SendPinMessage(body.PhoneNumber)
 

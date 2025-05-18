@@ -61,7 +61,7 @@ func RemoveAccount(c *gin.Context) {
 	}
 
 	// Send success response and delete cookie
-	jwt.ClearAuthCookie(c, os.Getenv("HOST"))
+	jwt.ClearAuthCookie(c, os.Getenv("HOST_URL"))
 
 	// Send success response
 	helpers.HandleSuccess(c, "Account removed successfully")

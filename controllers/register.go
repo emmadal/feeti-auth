@@ -75,7 +75,7 @@ func Register(c *gin.Context) {
 	}
 
 	// Set cookie
-	jwt.SetSecureCookie(c, token, os.Getenv("HOST"), false)
+	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"), false)
 
 	// Send success response
 	helpers.HandleSuccessData(
