@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	jwt "github.com/emmadal/feeti-module/jwt_module"
+	jwt "github.com/emmadal/feeti-module/auth"
 	"log"
 	"net/http"
 	"os"
@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
-	"github.com/emmadal/feeti-backend-user/middleware"
+	"github.com/emmadal/feeti-module/middleware"
 
 	"github.com/emmadal/feeti-backend-user/controllers"
 	"github.com/emmadal/feeti-backend-user/models"

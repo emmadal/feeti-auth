@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
-	jwt "github.com/emmadal/feeti-module/jwt_module"
+	jwt "github.com/emmadal/feeti-module/auth"
+	status "github.com/emmadal/feeti-module/status"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"os"
@@ -18,20 +19,20 @@ func Register(c *gin.Context) {
 
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "Invalid request data", err)
+		status.HandleError(c, http.StatusBadRequest, "Invalid request data", err)
 		return
 	}
 
 	// search if the user exists in DB
 	if body.CheckUserByPhone() {
-		helpers.HandleError(c, http.StatusConflict, "User already exist", nil)
+		status.HandleError(c, http.StatusConflict, "User already exist", nil)
 		return
 	}
 
 	// Hash the user's PIN
 	hashedPin, err := helpers.HashPassword(body.Pin)
 	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Unable to process PIN", err)
+		status.HandleError(c, http.StatusInternalServerError, "Unable to process PIN", err)
 		return
 	}
 
@@ -39,7 +40,7 @@ func Register(c *gin.Context) {
 	body.Pin = hashedPin
 	user, err := body.CreateUser()
 	if err != nil {
-		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to process user", err)
+		status.HandleError(c, http.StatusUnprocessableEntity, "Unable to process user", err)
 		return
 	}
 
@@ -53,7 +54,7 @@ func Register(c *gin.Context) {
 	natsMsg, err := pMessage.PublishEvent()
 	if err != nil {
 		_ = user.RollbackUser()
-		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to request wallet creation", err)
+		status.HandleError(c, http.StatusUnprocessableEntity, "Unable to request wallet creation", err)
 		return
 	}
 
@@ -70,7 +71,7 @@ func Register(c *gin.Context) {
 	// Generate JWT token
 	token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
 	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Unable to generate token", err)
+		status.HandleError(c, http.StatusInternalServerError, "Unable to generate token", err)
 		return
 	}
 
@@ -78,7 +79,7 @@ func Register(c *gin.Context) {
 	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"), false)
 
 	// Send success response
-	helpers.HandleSuccessData(
+	status.HandleSuccessData(
 		c, "User registered successfully", models.AuthResponse{
 			User: models.UserResponse{
 				ID:          user.ID,

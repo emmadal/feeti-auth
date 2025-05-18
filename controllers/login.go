@@ -3,13 +3,15 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	jwt "github.com/emmadal/feeti-module/auth"
+	status "github.com/emmadal/feeti-module/status"
+
 	"golang.org/x/sync/errgroup"
 	"net/http"
 	"os"
 
 	"github.com/emmadal/feeti-backend-user/helpers"
 	"github.com/emmadal/feeti-backend-user/models"
-	jwt "github.com/emmadal/feeti-module/jwt_module"
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
 )
@@ -24,7 +26,7 @@ func Login(c *gin.Context) {
 
 	// Validate the request body
 	if err := c.ShouldBindJSON(&body); err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
+		status.HandleError(c, http.StatusBadRequest, "Bad request", err)
 		return
 	}
 
@@ -32,13 +34,13 @@ func Login(c *gin.Context) {
 	userStruct := &models.User{PhoneNumber: body.PhoneNumber}
 	user, err := userStruct.GetUserByPhone()
 	if err != nil {
-		helpers.HandleError(c, http.StatusNotFound, "request not found", err)
+		status.HandleError(c, http.StatusNotFound, "request not found", err)
 		return
 	}
 
 	// Check if the user is locked and the quota exceeded
 	if user.Locked && user.Quota >= MaxLoginAttempts {
-		helpers.HandleError(c, http.StatusLocked, "Your account has been locked. Please contact support", nil)
+		status.HandleError(c, http.StatusLocked, "Your account has been locked. Please contact support", nil)
 		return
 	}
 
@@ -72,18 +74,18 @@ func Login(c *gin.Context) {
 		)
 
 		if err := group.Wait(); err != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Unable to lock user and wallet", err)
+			status.HandleError(c, http.StatusInternalServerError, "Unable to lock user and wallet", err)
 			return
 		}
 		result := <-natsMsg
 		_ = json.Unmarshal(result.Data, &response)
 		if response.Success && response.Data == nil {
-			helpers.HandleError(
+			status.HandleError(
 				c, http.StatusLocked, "Maximum login attempts reached. Your account has been locked", nil,
 			)
 			return
 		}
-		helpers.HandleError(c, http.StatusInternalServerError, "Something went wrong while locking user data", nil)
+		status.HandleError(c, http.StatusInternalServerError, "Something went wrong while locking user data", nil)
 		return
 	}
 
@@ -91,12 +93,12 @@ func Login(c *gin.Context) {
 	if !helpers.VerifyPassword(body.Pin, user.Pin) {
 		if user.Quota < MaxLoginAttempts {
 			if err := user.UpdateUserQuota(); err != nil {
-				helpers.HandleError(c, http.StatusInternalServerError, "Failed to update user quota", err)
+				status.HandleError(c, http.StatusInternalServerError, "Failed to update user quota", err)
 				return
 			}
 		}
 		// Return error
-		helpers.HandleError(c, http.StatusUnauthorized, "phone number or pin incorrect", nil)
+		status.HandleError(c, http.StatusUnauthorized, "phone number or pin incorrect", nil)
 		return
 	}
 
@@ -107,14 +109,14 @@ func Login(c *gin.Context) {
 	}
 	resp, err := pMessage.PublishEvent()
 	if err != nil {
-		helpers.HandleError(c, http.StatusUnprocessableEntity, "Unable to process wallet", err)
+		status.HandleError(c, http.StatusUnprocessableEntity, "Unable to process wallet", err)
 		return
 	}
 
 	// Unmarshal the wallet data
 	_ = json.Unmarshal(resp.Data, &response)
 	if !response.Success {
-		helpers.HandleError(c, http.StatusUnprocessableEntity, response.Error, nil)
+		status.HandleError(c, http.StatusUnprocessableEntity, response.Error, nil)
 		return
 	}
 
@@ -129,14 +131,14 @@ func Login(c *gin.Context) {
 	//Generate JWT token
 	token, err := jwt.GenerateToken(user.ID, []byte(os.Getenv("JWT_KEY")))
 	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Unable to generate token", err)
+		status.HandleError(c, http.StatusInternalServerError, "Unable to generate token", err)
 		return
 	}
 
 	// Reset user quota if needed to update database
 	if user.Quota > 0 {
 		if err := user.ResetUserQuota(); err != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Unable to reset quota", err)
+			status.HandleError(c, http.StatusInternalServerError, "Unable to reset quota", err)
 			return
 		}
 	}
@@ -144,7 +146,7 @@ func Login(c *gin.Context) {
 	// Update device token only if changed
 	if user.DeviceToken != body.DeviceToken {
 		if err := user.UpdateDeviceToken(); err != nil {
-			helpers.HandleError(c, http.StatusInternalServerError, "Unable to update device token", err)
+			status.HandleError(c, http.StatusInternalServerError, "Unable to update device token", err)
 			return
 		}
 	}
@@ -153,7 +155,7 @@ func Login(c *gin.Context) {
 	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"), false)
 
 	// Return success response
-	helpers.HandleSuccessData(
+	status.HandleSuccessData(
 		c, "Login successfully", models.AuthResponse{
 			User: models.UserResponse{
 				ID:          user.ID,

@@ -3,7 +3,8 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
-	jwt "github.com/emmadal/feeti-module/jwt_module"
+	jwt "github.com/emmadal/feeti-module/auth"
+	status "github.com/emmadal/feeti-module/status"
 	"net/http"
 	"os"
 
@@ -19,20 +20,20 @@ func RemoveAccount(c *gin.Context) {
 
 	// Validate request body
 	if err := c.ShouldBindJSON(&body); err != nil {
-		helpers.HandleError(c, http.StatusBadRequest, "Bad request", err)
+		status.HandleError(c, http.StatusBadRequest, "Bad request", err)
 		return
 	}
 
 	// search if a user exists in DB
 	user, err := models.GetUserByPhoneNumber(body.PhoneNumber)
 	if err != nil {
-		helpers.HandleError(c, http.StatusNotFound, "Invalid phone number or user PIN", err)
+		status.HandleError(c, http.StatusNotFound, "Invalid phone number or user PIN", err)
 		return
 	}
 
 	// verify user password
 	if !helpers.VerifyPassword(body.Pin, user.Pin) {
-		helpers.HandleError(c, http.StatusUnauthorized, "invalid password or phone number", err)
+		status.HandleError(c, http.StatusUnauthorized, "invalid password or phone number", err)
 		return
 	}
 
@@ -43,20 +44,20 @@ func RemoveAccount(c *gin.Context) {
 	}
 	resp, err := pMessage.PublishEvent()
 	if err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Unable to process wallet", err)
+		status.HandleError(c, http.StatusInternalServerError, "Unable to process wallet", err)
 		return
 	}
 
 	// Unmarshal the wallet data
 	_ = json.Unmarshal(resp.Data, &response)
 	if !response.Success {
-		helpers.HandleError(c, http.StatusUnprocessableEntity, response.Error, nil)
+		status.HandleError(c, http.StatusUnprocessableEntity, response.Error, nil)
 		return
 	}
 
 	// remove a user account
 	if err := user.DeactivateUserAccount(); err != nil {
-		helpers.HandleError(c, http.StatusInternalServerError, "Failed to remove account", err)
+		status.HandleError(c, http.StatusInternalServerError, "Failed to remove account", err)
 		return
 	}
 
@@ -64,5 +65,5 @@ func RemoveAccount(c *gin.Context) {
 	jwt.ClearAuthCookie(c, os.Getenv("HOST_URL"))
 
 	// Send success response
-	helpers.HandleSuccess(c, "Account removed successfully")
+	status.HandleSuccess(c, "Account removed successfully")
 }
