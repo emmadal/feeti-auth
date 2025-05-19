@@ -255,7 +255,7 @@ jobs:
                         key: NEW_RELIC_LICENSE_KEY
                   startupProbe:
                     httpGet:
-                      path: /api/v1/healthz
+                      path: /api/auth/v1/healthz
                       port: 3000
                     initialDelaySeconds: 10
                     periodSeconds: 5
@@ -263,7 +263,7 @@ jobs:
                     failureThreshold: 30
                   livenessProbe:
                     httpGet:
-                      path: /api/v1/healthz
+                      path: /api/auth/v1/healthz
                       port: 3000
                     initialDelaySeconds: 60
                     periodSeconds: 20
@@ -271,7 +271,7 @@ jobs:
                     failureThreshold: 5
                   readinessProbe:
                     httpGet:
-                      path: /api/v1/healthz
+                      path: /api/auth/v1/healthz
                       port: 3000
                     initialDelaySeconds: 30
                     periodSeconds: 10
@@ -359,7 +359,7 @@ jobs:
                       - /bin/sh
                       - -c
                       - |
-                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:3000/api/v1/healthz | grep -q 200; then
+                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:3000/api/auth/v1/healthz | grep -q 200; then
                           echo "Health check passed"
                           exit 0
                         else
@@ -508,16 +508,16 @@ jobs:
             kubectl run curl-test --image=curlimages/curl -n feeti-auth --rm -it --restart=Never -- curl -v http://auth-service:3000/api/v1/healthz || echo "Internal service test failed, check logs"
             
             # Create NodePort diagnostic info
-            echo "NodePort access should be available at: http://84.247.138.198:30000/api/v1/healthz"
+            echo "NodePort access should be available at: http://84.247.138.198:30000/api/auth/v1/healthz"
             echo "Running netstat to verify port binding..."
             sudo netstat -tulpn | grep 30000 || echo "Port 30000 not bound to any process, check kube-proxy"
             
             # Show how to test externally
-            echo "To test from your machine, run: curl -v http://84.247.138.198:30000/api/v1/healthz"
+            echo "To test from your machine, run: curl -v http://84.247.138.198:30000/api/auth/v1/healthz"
             
             # Try to connect locally
             echo "Testing locally on server..."
-            curl -v http://localhost:30000/api/v1/healthz || echo "Local test failed"
+            curl -v http://localhost:30000/api/auth/v1/healthz || echo "Local test failed"
           ENDSSH
 
   notify:
