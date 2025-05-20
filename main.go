@@ -49,7 +49,7 @@ func main() {
 	server.Use(
 		cors.New(
 			cors.Config{
-				AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
+				AllowMethods:     []string{"GET", "POST"},
 				AllowOrigins:     []string{"*"},
 				AllowFiles:       false,
 				AllowWildcard:    false,
@@ -80,9 +80,9 @@ func main() {
 	v1.POST("/register", controllers.Register)
 	v1.POST("/login", controllers.Login)
 	v1.GET("/healthz", controllers.HealthCheck)
-	v1.PUT("/update-pin", jwt.AuthGin(jwtKey), controllers.UpdatePin)
-	v1.DELETE("/remove-account", jwt.AuthGin(jwtKey), controllers.RemoveAccount)
-	v1.DELETE("/sign-out", jwt.AuthGin(jwtKey), controllers.SignOut)
+	v1.POST("/update-pin", jwt.AuthGin(jwtKey), controllers.UpdatePin)
+	v1.POST("/remove-account", jwt.AuthGin(jwtKey), controllers.RemoveAccount)
+	v1.POST("/sign-out", jwt.AuthGin(jwtKey), controllers.SignOut)
 
 	// Subscription is now handled inside NatsConnect
 	if err := helpers.NatsConnect(); err != nil {
