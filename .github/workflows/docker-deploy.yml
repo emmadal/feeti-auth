@@ -313,19 +313,15 @@ jobs:
             name: auth-ingress
             namespace: feeti-auth
             annotations:
-              nginx.ingress.kubernetes.io/ssl-redirect: "true"
-              cert-manager.io/cluster-issuer: letsencrypt-prod
+              nginx.ingress.kubernetes.io/rewrite-target: /
+              nginx.ingress.kubernetes.io/ssl-redirect: "false"
           spec:
             ingressClassName: nginx
-            tls:
-            - hosts:
-              - auth.feeti.app
-              secretName: auth-tls
             rules:
-            - host: auth.feeti.app
+            - host: ${{ secrets.HOST_URL }}
               http:
                 paths:
-                - path: /
+                - path: /api/auth/v1
                   pathType: Prefix
                   backend:
                     service:
