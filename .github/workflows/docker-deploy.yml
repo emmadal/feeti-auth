@@ -171,20 +171,21 @@ jobs:
             name: auth-service-ingress
             namespace: feeti-auth
             annotations:
-              kubernetes.io/ingress.class: "nginx"
               cert-manager.io/cluster-issuer: "letsencrypt-prod"
               nginx.ingress.kubernetes.io/ssl-redirect: "true"
               nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+              nginx.ingress.kubernetes.io/rewrite-target: /\$2
           spec:
+            ingressClassName: nginx
             tls:
             - hosts:
-              - api.feeti.me
+              - ${{ secrets.HOST_URL }}
               secretName: feeti-auth-tls
             rules:
-            - host: api.feeti.me
+            - host: ${{ secrets.HOST_URL }}
               http:
                 paths:
-                - path: /api/v1/auth
+                - path: /api/auth/v1(/|$)(.*)
                   pathType: Prefix
                   backend:
                     service:
@@ -404,7 +405,7 @@ jobs:
           spec:
             acme:
               server: https://acme-v02.api.letsencrypt.org/directory
-              email: admin@feeti.me
+              email: metasploit.ruby@gmail.com
               privateKeySecretRef:
                 name: letsencrypt-prod
               solvers:
@@ -568,22 +569,32 @@ jobs:
             echo "Checking certificate status..."
             kubectl -n feeti-auth get certificate
             
-            # Testing connectivity
+            # Test paths directly on the service to confirm application is responding
+            echo "Testing service endpoints directly..."
+            kubectl -n feeti-auth run curl-test --image=curlimages/curl --rm -i --restart=Never -- \
+              curl --max-time 5 http://auth-service:3000/healthz || echo "Health endpoint may have different path"
+            
+            kubectl -n feeti-auth run curl-test2 --image=curlimages/curl --rm -i --restart=Never -- \
+              curl --max-time 5 http://auth-service:3000/api/auth/v1/healthz || echo "API path test failed"
+            
+            kubectl -n feeti-auth run curl-test3 --image=curlimages/curl --rm -i --restart=Never -- \
+              curl --max-time 5 http://auth-service:3000/ || echo "Root path test failed"
+            
             echo "Checking endpoints..."
             kubectl -n feeti-auth get endpoints
             
-            echo "Testing service connectivity internally..."
-            kubectl -n feeti-auth run curl-test --image=curlimages/curl --rm -i --restart=Never -- \
-              curl --max-time 5 http://auth-service:3000/health || echo "Service health check failed but continuing"
+            echo "Checking Ingress controller status..."
+            kubectl -n ingress-nginx get pods
             
-            echo "Deployment completed successfully. Your service is available at https://api.feeti.me/api/auth/v1"
+            echo "Deployment completed successfully. Your service should be available at:"
+            echo "https://${{ secrets.HOST_URL }}/api/auth/v1/healthz"
           ENDSSH
 
       - name: Send success notification
         if: success()
         run: |
           echo "Successfully deployed auth-service with HTTPS enabled."
-          echo "Service is now available at https://api.feeti.me/api/auth/v1"
+          echo "Service is now available at https://${{ secrets.HOST_URL }}/api/auth/v1"
           
           # You can add other notification methods here (Slack, Discord, etc.)
 
