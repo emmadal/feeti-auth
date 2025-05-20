@@ -297,11 +297,6 @@ jobs:
                       secretKeyRef:
                         name: auth-secrets
                         key: TWILIO_AUTH_TOKEN
-                  - name: NEW_RELIC_LICENSE_KEY
-                    valueFrom:
-                      secretKeyRef:
-                        name: auth-secrets
-                        key: NEW_RELIC_LICENSE_KEY
                   startupProbe:
                     httpGet:
                       path: /api/auth/v1/healthz
@@ -489,7 +484,6 @@ jobs:
               --from-literal=JWT_KEY='${{ secrets.JWT_KEY }}' \
               --from-literal=TWILIO_ACCOUNT_SID='${{ secrets.TWILIO_ACCOUNT_SID }}' \
               --from-literal=TWILIO_AUTH_TOKEN='${{ secrets.TWILIO_AUTH_TOKEN }}' \
-              --from-literal=NEW_RELIC_LICENSE_KEY='${{ secrets.NEW_RELIC_LICENSE_KEY }}' \
               --from-literal=DATABASE_URL='${{ secrets.DATABASE_URL }}' \
               --from-literal=HOST_URL='${{ secrets.HOST_URL }}' \
               --from-literal=NATS_URL='${{ secrets.NATS_URL }}' \
