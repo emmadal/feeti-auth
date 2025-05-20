@@ -418,22 +418,63 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
+      - name: Install cert-manager and NGINX Ingress Controller
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            # Install cert-manager if not already installed
+            if ! kubectl get namespace cert-manager &>/dev/null; then
+              echo "Installing cert-manager..."
+              kubectl create namespace cert-manager
+              kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.0/cert-manager.yaml
+              
+              # Wait for cert-manager to be ready
+              echo "Waiting for cert-manager to be ready..."
+              kubectl -n cert-manager wait --for=condition=available deployment --all --timeout=300s
+            else
+              echo "cert-manager already installed."
+            fi
+            
+            # Install NGINX Ingress Controller if not already installed
+            if ! kubectl get namespace ingress-nginx &>/dev/null; then
+              echo "Installing NGINX Ingress Controller..."
+              kubectl create namespace ingress-nginx
+              kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.0/deploy/static/provider/cloud/deploy.yaml
+              
+              # Wait for NGINX Ingress Controller to be ready
+              echo "Waiting for NGINX Ingress Controller to be ready..."
+              kubectl -n ingress-nginx wait --for=condition=available deployment --all --timeout=300s
+            else
+              echo "NGINX Ingress Controller already installed."
+            fi
+          ENDSSH
+
+      - name: Transfer Kubernetes manifests to server
+        run: |
+          # Create directory on remote server
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p /tmp/k8s"
+          
+          # Copy all manifests to the server
+          scp -o StrictHostKeyChecking=no ./k8s/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/k8s/
+          
+          # List the files to confirm transfer
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "ls -la /tmp/k8s/"
+
       - name: Run kubectl apply with validation
         run: |
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
-            cd /tmp
+            cd /tmp/k8s
             
             # Create namespace if it doesn't exist
-            kubectl apply -f ./k8s/namespace.yaml
-            kubectl apply -f ./k8s/configmap.yaml
+            kubectl apply -f namespace.yaml
+            kubectl apply -f configmap.yaml
             
             # Apply the rest of the manifests (rolling update)
-            kubectl apply -f ./k8s/network-policy.yaml
-            kubectl apply -f ./k8s/auth-service.yaml
-            kubectl apply -f ./k8s/cluster-issuer.yaml
-            kubectl apply -f ./k8s/auth-deployment.yaml
-            kubectl apply -f ./k8s/ingress.yaml
-            kubectl apply -f ./k8s/auth-hpa.yaml
+            kubectl apply -f network-policy.yaml
+            kubectl apply -f auth-service.yaml
+            kubectl apply -f cluster-issuer.yaml
+            kubectl apply -f auth-deployment.yaml
+            kubectl apply -f ingress.yaml
+            kubectl apply -f auth-hpa.yaml
             
             # Validation: Check if deployment has started rolling out
             if ! kubectl -n feeti-auth rollout status deployment/auth-service --timeout=30s; then
