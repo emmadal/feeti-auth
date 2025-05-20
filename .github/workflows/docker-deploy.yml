@@ -174,7 +174,6 @@ jobs:
               cert-manager.io/cluster-issuer: "letsencrypt-prod"
               nginx.ingress.kubernetes.io/ssl-redirect: "true"
               nginx.ingress.kubernetes.io/proxy-body-size: "10m"
-              nginx.ingress.kubernetes.io/rewrite-target: /\$2
           spec:
             ingressClassName: nginx
             tls:
@@ -185,8 +184,32 @@ jobs:
             - host: ${{ secrets.HOST_URL }}
               http:
                 paths:
-                - path: /api/auth/v1(/|$)(.*)
+                - path: /api/auth/v1
                   pathType: Prefix
+                  backend:
+                    service:
+                      name: auth-service
+                      port:
+                        number: 3000
+          EOF
+          
+          # Generate auth-ingress.yaml
+          cat <<EOF > ./k8s/auth-ingress.yaml
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: auth-direct-ingress
+            namespace: feeti-auth
+            annotations:
+              nginx.ingress.kubernetes.io/ssl-redirect: "false"
+          spec:
+            ingressClassName: nginx
+            rules:
+            - host: ${{ secrets.HOST_URL }}
+              http:
+                paths:
+                - path: /healthz
+                  pathType: Exact
                   backend:
                     service:
                       name: auth-service
@@ -303,31 +326,6 @@ jobs:
                     periodSeconds: 10
                     timeoutSeconds: 5
                     failureThreshold: 3
-          EOF
-          
-          # Generate auth-ingress.yaml
-          cat <<EOF > ./k8s/auth-ingress.yaml
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            name: auth-ingress
-            namespace: feeti-auth
-            annotations:
-              nginx.ingress.kubernetes.io/rewrite-target: /
-              nginx.ingress.kubernetes.io/ssl-redirect: "false"
-          spec:
-            ingressClassName: nginx
-            rules:
-            - host: ${{ secrets.HOST_URL }}
-              http:
-                paths:
-                - path: /api/auth/v1
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: auth-service
-                      port:
-                        number: 3000
           EOF
           
           # Generate auth-hpa.yaml
@@ -565,25 +563,29 @@ jobs:
             echo "Checking certificate status..."
             kubectl -n feeti-auth get certificate
             
-            # Test paths directly on the service to confirm application is responding
-            echo "Testing service endpoints directly..."
+            # Test paths directly on the service to verify routes
+            echo "Testing service endpoints directly (this should work)..."
             kubectl -n feeti-auth run curl-test --image=curlimages/curl --rm -i --restart=Never -- \
               curl --max-time 5 http://auth-service:3000/healthz || echo "Health endpoint may have different path"
             
-            kubectl -n feeti-auth run curl-test2 --image=curlimages/curl --rm -i --restart=Never -- \
-              curl --max-time 5 http://auth-service:3000/api/auth/v1/healthz || echo "API path test failed"
-            
-            kubectl -n feeti-auth run curl-test3 --image=curlimages/curl --rm -i --restart=Never -- \
-              curl --max-time 5 http://auth-service:3000/ || echo "Root path test failed"
-            
+            # Get information about available routes
+            echo "Application routes analysis - tracing all endpoints:"
+            kubectl -n feeti-auth exec deployment/auth-service -c auth-service -- printenv || echo "Could not get environment"
+            kubectl -n feeti-auth run curl-test-path --image=curlimages/curl --rm -i --restart=Never -- \
+              curl --max-time 5 -v http://auth-service:3000/ || echo "Root path test failed"
+              
             echo "Checking endpoints..."
             kubectl -n feeti-auth get endpoints
             
             echo "Checking Ingress controller status..."
             kubectl -n ingress-nginx get pods
             
+            echo "Checking Ingress configuration details:"
+            kubectl -n feeti-auth describe ingress
+            
             echo "Deployment completed successfully. Your service should be available at:"
-            echo "https://${{ secrets.HOST_URL }}/api/auth/v1/healthz"
+            echo "For API: https://${{ secrets.HOST_URL }}/api/auth/v1"
+            echo "For health endpoint: https://${{ secrets.HOST_URL }}/healthz"
           ENDSSH
 
       - name: Send success notification
