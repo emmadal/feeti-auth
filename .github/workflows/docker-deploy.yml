@@ -468,17 +468,75 @@ jobs:
             kubectl apply -f namespace.yaml
             kubectl apply -f configmap.yaml
             
-            # Apply the rest of the manifests (rolling update)
+            # Create or update Kubernetes secrets first
+            kubectl create secret generic auth-secrets \
+              --namespace=feeti-auth \
+              --from-literal=JWT_KEY='${{ secrets.JWT_KEY }}' \
+              --from-literal=TWILIO_ACCOUNT_SID='${{ secrets.TWILIO_ACCOUNT_SID }}' \
+              --from-literal=TWILIO_AUTH_TOKEN='${{ secrets.TWILIO_AUTH_TOKEN }}' \
+              --from-literal=NEW_RELIC_LICENSE_KEY='${{ secrets.NEW_RELIC_LICENSE_KEY }}' \
+              --from-literal=DATABASE_URL='${{ secrets.DATABASE_URL }}' \
+              --from-literal=HOST_URL='${{ secrets.HOST_URL }}' \
+              --from-literal=NATS_URL='${{ secrets.NATS_URL }}' \
+              --from-literal=GIN_MODE='release' \
+              --from-literal=PORT=':3000' \
+              --dry-run=client -o yaml | kubectl apply -f -
+            
+            # Apply remaining manifests in correct order
             kubectl apply -f network-policy.yaml
             kubectl apply -f auth-service.yaml
             kubectl apply -f cluster-issuer.yaml
-            kubectl apply -f auth-deployment.yaml
+            
+            # Fix ingress class annotation issue
+            sed -i 's/kubernetes.io\/ingress.class: "nginx"//' ingress.yaml
+            sed -i '/spec:/a\  ingressClassName: nginx' ingress.yaml
+            
+            # Apply ingress first to let certificate provisioning begin
             kubectl apply -f ingress.yaml
+            
+            # Apply deployment last to ensure all other resources are ready
+            kubectl apply -f auth-deployment.yaml
             kubectl apply -f auth-hpa.yaml
             
-            # Validation: Check if deployment has started rolling out
-            if ! kubectl -n feeti-auth rollout status deployment/auth-service --timeout=30s; then
-              echo "Deployment failed to start rolling out. Rolling back..."
+            # Validate deployment status with increased timeout
+            echo "Waiting for deployment to begin rolling out..."
+            sleep 5
+            
+            # Check pod creation before waiting on rollout
+            echo "Checking pod status before waiting on rollout..."
+            kubectl -n feeti-auth get pods -l app=auth-service
+            
+            # Check the logs in case of pending pods
+            PENDING_PODS=$(kubectl -n feeti-auth get pods -l app=auth-service -o jsonpath='{.items[?(@.status.phase=="Pending")].metadata.name}')
+            if [ -n "$PENDING_PODS" ]; then
+              echo "Found pending pods: $PENDING_PODS"
+              for pod in $PENDING_PODS; do
+                echo "Describing pending pod $pod:"
+                kubectl -n feeti-auth describe pod $pod
+              done
+            fi
+            
+            # Longer timeout for rollout status
+            if ! kubectl -n feeti-auth rollout status deployment/auth-service --timeout=120s; then
+              echo "Deployment failed to start rolling out. Getting more diagnostics before rollback..."
+              
+              # Get pod details
+              echo "Pod details:"
+              kubectl -n feeti-auth get pods -l app=auth-service -o wide
+              
+              # Get any events related to the pods
+              echo "Pod events:"
+              kubectl -n feeti-auth get events --sort-by=.metadata.creationTimestamp | tail -20
+              
+              # Get logs from any containers that have started
+              PODS=$(kubectl -n feeti-auth get pods -l app=auth-service -o jsonpath='{.items[*].metadata.name}')
+              for pod in $PODS; do
+                echo "Logs from pod $pod (if available):"
+                kubectl -n feeti-auth logs $pod --tail=50 || echo "No logs available for $pod"
+              done
+              
+              # Now roll back
+              echo "Rolling back deployment..."
               kubectl -n feeti-auth rollout undo deployment/auth-service
               exit 1
             fi
