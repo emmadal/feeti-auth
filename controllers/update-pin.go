@@ -26,6 +26,13 @@ func UpdatePin(c *gin.Context) {
 		return
 	}
 
+	// verify user identity with context data
+	id, _ := jwt.GetUserIDFromGin(c)
+	if user.ID != id {
+		status.HandleError(c, http.StatusForbidden, "Unauthorized user", err)
+		return
+	}
+
 	// Verify old PIN
 	if !helpers.VerifyPassword(body.OldPin, user.Pin) {
 		status.HandleError(c, http.StatusUnauthorized, "invalid password or phone number", err)

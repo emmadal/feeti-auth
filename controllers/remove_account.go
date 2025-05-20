@@ -13,6 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const subject = "wallet.lock"
+
 // RemoveAccount remove user account
 func RemoveAccount(c *gin.Context) {
 	body := models.RemoveUserAccount{}
@@ -31,6 +33,13 @@ func RemoveAccount(c *gin.Context) {
 		return
 	}
 
+	// verify user identity with context data
+	id, _ := jwt.GetUserIDFromGin(c)
+	if user.ID != id {
+		status.HandleError(c, http.StatusForbidden, "Unauthorized user", err)
+		return
+	}
+
 	// verify user password
 	if !helpers.VerifyPassword(body.Pin, user.Pin) {
 		status.HandleError(c, http.StatusUnauthorized, "invalid password or phone number", err)
@@ -38,11 +47,11 @@ func RemoveAccount(c *gin.Context) {
 	}
 
 	// publish a request to get wallet data
-	pMessage := helpers.RequestPayload{
-		Subject: "wallet.lock",
+	request := helpers.RequestPayload{
+		Subject: subject,
 		Data:    fmt.Sprintf("%d", user.ID),
 	}
-	resp, err := pMessage.PublishEvent()
+	resp, err := request.PublishEvent()
 	if err != nil {
 		status.HandleError(c, http.StatusInternalServerError, "Unable to process wallet", err)
 		return
