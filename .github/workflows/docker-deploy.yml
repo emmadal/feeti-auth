@@ -198,7 +198,7 @@ jobs:
           apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
-            name: auth-direct-ingress
+            name: auth-healthz-ingress
             namespace: feeti-auth
             annotations:
               nginx.ingress.kubernetes.io/ssl-redirect: "false"
@@ -454,6 +454,26 @@ jobs:
           # List the files to confirm transfer
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "ls -la /tmp/k8s/"
 
+      - name: Clean up old resources
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            echo "Cleaning up old Ingress resources..."
+            
+            # Remove any ingress with 'auth.feeti.app' hostname
+            OLD_INGRESS=$(kubectl get ingress -n feeti-auth -o json | jq -r '.items[] | select(.spec.rules[].host == "auth.feeti.app") | .metadata.name')
+            if [ -n "$OLD_INGRESS" ]; then
+              echo "Removing old ingress with incorrect hostname: $OLD_INGRESS"
+              kubectl delete ingress -n feeti-auth $OLD_INGRESS
+            fi
+            
+            # Also handle any other duplicate or conflicting ingress
+            # But keep our newly created ones
+            kubectl get ingress -n feeti-auth --no-headers | grep -v "auth-service-ingress" | grep -v "auth-healthz-ingress" | awk '{print $1}' | xargs -r kubectl delete ingress -n feeti-auth
+            
+            echo "Current ingress resources after cleanup:"
+            kubectl get ingress -n feeti-auth
+          ENDSSH
+
       - name: Run kubectl apply with validation
         run: |
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
@@ -482,12 +502,12 @@ jobs:
             kubectl apply -f auth-service.yaml
             kubectl apply -f cluster-issuer.yaml
             
-            # Fix ingress class annotation issue
-            sed -i 's/kubernetes.io\/ingress.class: "nginx"//' ingress.yaml
-            sed -i '/spec:/a\  ingressClassName: nginx' ingress.yaml
+            # Fix ingress class annotation issue if needed
+            sed -i 's/kubernetes.io\/ingress.class: "nginx"//' ingress.yaml || true
             
             # Apply ingress first to let certificate provisioning begin
             kubectl apply -f ingress.yaml
+            kubectl apply -f auth-ingress.yaml
             
             # Apply deployment last to ensure all other resources are ready
             kubectl apply -f auth-deployment.yaml
