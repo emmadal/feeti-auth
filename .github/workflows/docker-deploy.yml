@@ -424,16 +424,16 @@ jobs:
             cd /tmp
             
             # Create namespace if it doesn't exist
-            kubectl apply -f namespace.yaml
-            kubectl apply -f configmap.yaml
+            kubectl apply -f ./k8s/namespace.yaml
+            kubectl apply -f ./k8s/configmap.yaml
             
             # Apply the rest of the manifests (rolling update)
-            kubectl apply -f network-policy.yaml
-            kubectl apply -f auth-service.yaml
-            kubectl apply -f cluster-issuer.yaml
-            kubectl apply -f auth-deployment.yaml
-            kubectl apply -f ingress.yaml
-            kubectl apply -f auth-hpa.yaml
+            kubectl apply -f ./k8s/network-policy.yaml
+            kubectl apply -f ./k8s/auth-service.yaml
+            kubectl apply -f ./k8s/cluster-issuer.yaml
+            kubectl apply -f ./k8s/auth-deployment.yaml
+            kubectl apply -f ./k8s/ingress.yaml
+            kubectl apply -f ./k8s/auth-hpa.yaml
             
             # Validation: Check if deployment has started rolling out
             if ! kubectl -n feeti-auth rollout status deployment/auth-service --timeout=30s; then
@@ -477,14 +477,14 @@ jobs:
             kubectl -n feeti-auth run curl-test --image=curlimages/curl --rm -i --restart=Never -- \
               curl --max-time 5 http://auth-service:3000/health || echo "Service health check failed but continuing"
             
-            echo "Deployment completed successfully. Your service is available at https://api.feeti.me/api/v1/auth"
+            echo "Deployment completed successfully. Your service is available at https://api.feeti.me/api/auth/v1"
           ENDSSH
 
       - name: Send success notification
         if: success()
         run: |
           echo "Successfully deployed auth-service with HTTPS enabled."
-          echo "Service is now available at https://api.feeti.me/api/v1/auth"
+          echo "Service is now available at https://api.feeti.me/api/auth/v1"
           
           # You can add other notification methods here (Slack, Discord, etc.)
 
