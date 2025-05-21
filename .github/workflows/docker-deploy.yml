@@ -159,32 +159,24 @@ jobs:
             - name: http
               port: 3000
               targetPort: 3000
+              nodePort: 30000
               protocol: TCP
-            type: ClusterIP
+            type: NodePort
           EOF
           
-          # Generate ingress.yaml for TLS and routing
+          # Generate simplified ingress.yaml for basic routing only
           cat <<EOF > ./k8s/ingress.yaml
           apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
             name: auth-service-ingress
             namespace: feeti-auth
-            annotations:
-              cert-manager.io/cluster-issuer: "letsencrypt-prod"
-              nginx.ingress.kubernetes.io/ssl-redirect: "true"
-              nginx.ingress.kubernetes.io/proxy-body-size: "10m"
           spec:
             ingressClassName: nginx
-            tls:
-            - hosts:
-              - ${{ secrets.HOST_URL }}
-              secretName: feeti-auth-tls
             rules:
-            - host: ${{ secrets.HOST_URL }}
-              http:
+            - http:
                 paths:
-                - path: /api/auth/v1
+                - path: /api/v1/auth
                   pathType: Prefix
                   backend:
                     service:
@@ -193,20 +185,17 @@ jobs:
                         number: 3000
           EOF
           
-          # Generate auth-ingress.yaml
+          # Generate auth-ingress.yaml (simplified)
           cat <<EOF > ./k8s/auth-ingress.yaml
           apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
             name: auth-healthz-ingress
             namespace: feeti-auth
-            annotations:
-              nginx.ingress.kubernetes.io/ssl-redirect: "false"
           spec:
             ingressClassName: nginx
             rules:
-            - host: ${{ secrets.HOST_URL }}
-              http:
+            - http:
                 paths:
                 - path: /healthz
                   pathType: Exact
@@ -299,7 +288,7 @@ jobs:
                         key: TWILIO_AUTH_TOKEN
                   startupProbe:
                     httpGet:
-                      path: /api/auth/v1/healthz
+                      path: /api/v1/auth/healthz
                       port: 3000
                     initialDelaySeconds: 10
                     periodSeconds: 5
@@ -307,7 +296,7 @@ jobs:
                     failureThreshold: 30
                   livenessProbe:
                     httpGet:
-                      path: /api/auth/v1/healthz
+                      path: /api/v1/auth/healthz
                       port: 3000
                     initialDelaySeconds: 60
                     periodSeconds: 20
@@ -315,7 +304,7 @@ jobs:
                     failureThreshold: 5
                   readinessProbe:
                     httpGet:
-                      path: /api/auth/v1/healthz
+                      path: /api/v1/auth/healthz
                       port: 3000
                     initialDelaySeconds: 30
                     periodSeconds: 10
@@ -374,7 +363,7 @@ jobs:
                       - /bin/sh
                       - -c
                       - |
-                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:3000/api/auth/v1/healthz | grep -q 200; then
+                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:3000/api/v1/auth/healthz | grep -q 200; then
                           echo "Health check passed"
                           exit 0
                         else
@@ -383,48 +372,16 @@ jobs:
                         fi
                     restartPolicy: OnFailure
           EOF
-          
-          # Generate certificate issuer for Let's Encrypt
-          cat <<EOF > ./k8s/cluster-issuer.yaml
-          apiVersion: cert-manager.io/v1
-          kind: ClusterIssuer
-          metadata:
-            name: letsencrypt-prod
-            namespace: cert-manager
-          spec:
-            acme:
-              server: https://acme-v02.api.letsencrypt.org/directory
-              email: metasploit.ruby@gmail.com
-              privateKeySecretRef:
-                name: letsencrypt-prod
-              solvers:
-              - http01:
-                  ingress:
-                    class: nginx
-          EOF
 
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.5.4
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
-      - name: Install cert-manager and NGINX Ingress Controller
+      - name: Install NGINX Ingress Controller
         run: |
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
-            # Install cert-manager if not already installed
-            if ! kubectl get namespace cert-manager &>/dev/null; then
-              echo "Installing cert-manager..."
-              kubectl create namespace cert-manager
-              kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.0/cert-manager.yaml
-              
-              # Wait for cert-manager to be ready
-              echo "Waiting for cert-manager to be ready..."
-              kubectl -n cert-manager wait --for=condition=available deployment --all --timeout=300s
-            else
-              echo "cert-manager already installed."
-            fi
-            
-            # Install NGINX Ingress Controller if not already installed
+            # Only install NGINX Ingress Controller if not already installed
             if ! kubectl get namespace ingress-nginx &>/dev/null; then
               echo "Installing NGINX Ingress Controller..."
               kubectl create namespace ingress-nginx
@@ -454,15 +411,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
             echo "Cleaning up old Ingress resources..."
             
-            # Remove any ingress with 'auth.feeti.app' hostname
-            OLD_INGRESS=$(kubectl get ingress -n feeti-auth -o json | jq -r '.items[] | select(.spec.rules[].host == "auth.feeti.app") | .metadata.name')
-            if [ -n "$OLD_INGRESS" ]; then
-              echo "Removing old ingress with incorrect hostname: $OLD_INGRESS"
-              kubectl delete ingress -n feeti-auth $OLD_INGRESS
-            fi
-            
-            # Also handle any other duplicate or conflicting ingress
-            # But keep our newly created ones
+            # Remove any old ingress resources
             kubectl get ingress -n feeti-auth --no-headers | grep -v "auth-service-ingress" | grep -v "auth-healthz-ingress" | awk '{print $1}' | xargs -r kubectl delete ingress -n feeti-auth
             
             echo "Current ingress resources after cleanup:"
@@ -494,12 +443,8 @@ jobs:
             # Apply remaining manifests in correct order
             kubectl apply -f network-policy.yaml
             kubectl apply -f auth-service.yaml
-            kubectl apply -f cluster-issuer.yaml
             
-            # Fix ingress class annotation issue if needed
-            sed -i 's/kubernetes.io\/ingress.class: "nginx"//' ingress.yaml || true
-            
-            # Apply ingress first to let certificate provisioning begin
+            # Apply ingress resources
             kubectl apply -f ingress.yaml
             kubectl apply -f auth-ingress.yaml
             
@@ -569,13 +514,12 @@ jobs:
               exit 1
             fi
             
-            # Verify the ingress is correctly configured
-            echo "Checking ingress status..."
-            kubectl -n feeti-auth get ingress
-            
-            # Check if certificate has been issued
-            echo "Checking certificate status..."
-            kubectl -n feeti-auth get certificate
+            # Verify the NodePort service is correctly configured
+            echo "Checking NodePort service status..."
+            kubectl -n feeti-auth get service auth-service
+            NODE_PORT=$(kubectl -n feeti-auth get service auth-service -o jsonpath='{.spec.ports[0].nodePort}')
+            NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+            echo "Service should be accessible at http://${{ secrets.HOST_URL }}:30000/api/v1/auth"
             
             # Test paths directly on the service to verify routes
             echo "Testing service endpoints directly (this should work)..."
@@ -598,15 +542,15 @@ jobs:
             kubectl -n feeti-auth describe ingress
             
             echo "Deployment completed successfully. Your service should be available at:"
-            echo "For API: https://${{ secrets.HOST_URL }}/api/auth/v1"
-            echo "For health endpoint: https://${{ secrets.HOST_URL }}/healthz"
+            echo "For API: http://${{ secrets.HOST_URL }}:30000/api/v1/auth"
+            echo "For health endpoint: http://${{ secrets.HOST_URL }}:30000/healthz"
           ENDSSH
 
       - name: Send success notification
         if: success()
         run: |
-          echo "Successfully deployed auth-service with HTTPS enabled."
-          echo "Service is now available at https://${{ secrets.HOST_URL }}/api/auth/v1"
+          echo "Successfully deployed auth-service with NodePort 30000."
+          echo "Service is now available at http://${{ secrets.HOST_URL }}:30000/api/v1/auth"
           
           # You can add other notification methods here (Slack, Discord, etc.)
 
