@@ -28,6 +28,10 @@ type NatsConfig struct {
 	Replicas      int
 }
 
+const (
+	subjectAuth = "auth.get.user"
+)
+
 // ResponsePayload represents the standard response structure
 type ResponsePayload struct {
 	Success bool   `json:"success"`
@@ -119,20 +123,20 @@ func NatsConnect() error {
 			// Start all subscription handlers
 			err1 := subscribeToGetUser(&subWg)
 
+			// Wait for all subscriptions to be ready
+			subWg.Wait()
+
 			// Check for errors
 			for i, err := range []error{err1} {
 				if err != nil {
 					subject := ""
 					switch i {
 					case 0:
-						subject = "auth.get.user"
+						subject = subjectAuth
 					}
 					log.Printf("Failed to subscribe to %s: %v\n", subject, err)
 				}
 			}
-
-			// Wait for all subscriptions to be ready
-			subWg.Wait()
 			log.Println("All NATS subscriptions established")
 		}()
 	})
@@ -203,8 +207,8 @@ func RegisterSubscription(sub *nats.Subscription) {
 func subscribeToGetUser(wg *sync.WaitGroup) error {
 	defer wg.Done()
 
-	// Subscribe to the "auth.get.user" subject
-	sub, err := nc.Subscribe("auth.get.user", func(msg *nats.Msg) {
+	// Subscribe to the subjectAuth subject
+	sub, err := nc.Subscribe(subjectAuth, func(msg *nats.Msg) {
 		startTime := time.Now()
 		log.Printf("Received message [%s] on subject %s\n", string(msg.Data), msg.Subject)
 
@@ -241,12 +245,12 @@ func subscribeToGetUser(wg *sync.WaitGroup) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to auth.get.user: %w", err)
+		return fmt.Errorf("failed to subscribe to %s: %w", subjectAuth, err)
 	}
 
 	// Keep subscription active - don't auto-unsubscribe
 	if err := sub.SetPendingLimits(-1, -1); err != nil {
-		log.Printf("Failed to set pending limits for auth.get.user: %v\n", err)
+		log.Printf("Failed to set pending limits for %s: %v\n", subjectAuth, err)
 	}
 
 	// Register this subscription for cleanup
