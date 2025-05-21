@@ -363,7 +363,8 @@ jobs:
                       - /bin/sh
                       - -c
                       - |
-                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:3000/api/v1/auth/healthz | grep -q 200; then
+                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:3000/api/v1/auth/healthz | grep
+          -q 200; then
                           echo "Health check passed"
                           exit 0
                         else
