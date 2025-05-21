@@ -176,7 +176,7 @@ jobs:
             rules:
             - http:
                 paths:
-                - path: /api/v1/auth
+                - path: /api/v1
                   pathType: Prefix
                   backend:
                     service:
@@ -288,7 +288,7 @@ jobs:
                         key: TWILIO_AUTH_TOKEN
                   startupProbe:
                     httpGet:
-                      path: /api/v1/auth/healthz
+                      path: /api/v1/healthz
                       port: 3000
                     initialDelaySeconds: 10
                     periodSeconds: 5
@@ -296,7 +296,7 @@ jobs:
                     failureThreshold: 30
                   livenessProbe:
                     httpGet:
-                      path: /api/v1/auth/healthz
+                      path: /api/v1/healthz
                       port: 3000
                     initialDelaySeconds: 60
                     periodSeconds: 20
@@ -304,7 +304,7 @@ jobs:
                     failureThreshold: 5
                   readinessProbe:
                     httpGet:
-                      path: /api/v1/auth/healthz
+                      path: /api/v1/healthz
                       port: 3000
                     initialDelaySeconds: 30
                     periodSeconds: 10
@@ -363,7 +363,7 @@ jobs:
                       - /bin/sh
                       - -c
                       - |
-                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:3000/api/v1/auth/healthz | grep
+                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:3000/api/v1/healthz | grep
           -q 200; then
                           echo "Health check passed"
                           exit 0
@@ -520,7 +520,7 @@ jobs:
             kubectl -n feeti-auth get service auth-service
             NODE_PORT=$(kubectl -n feeti-auth get service auth-service -o jsonpath='{.spec.ports[0].nodePort}')
             NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-            echo "Service should be accessible at http://${{ secrets.HOST_URL }}:30000/api/v1/auth"
+            echo "Service should be accessible at http://${{ secrets.HOST_URL }}:30000/api/v1"
             
             # Test paths directly on the service to verify routes
             echo "Testing service endpoints directly (this should work)..."
@@ -543,7 +543,7 @@ jobs:
             kubectl -n feeti-auth describe ingress
             
             echo "Deployment completed successfully. Your service should be available at:"
-            echo "For API: http://${{ secrets.HOST_URL }}:30000/api/v1/auth"
+            echo "For API: http://${{ secrets.HOST_URL }}:30000/api/v1"
             echo "For health endpoint: http://${{ secrets.HOST_URL }}:30000/healthz"
           ENDSSH
 
@@ -551,7 +551,7 @@ jobs:
         if: success()
         run: |
           echo "Successfully deployed auth-service with NodePort 30000."
-          echo "Service is now available at http://${{ secrets.HOST_URL }}:30000/api/v1/auth"
+          echo "Service is now available at http://${{ secrets.HOST_URL }}:30000/api/v1"
           
           # You can add other notification methods here (Slack, Discord, etc.)
 

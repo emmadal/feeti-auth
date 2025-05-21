@@ -63,7 +63,7 @@ func main() {
 	server.Use(middleware.Recover())
 
 	// Set api version group
-	v1 := server.Group("/api/v1/auth")
+	v1 := server.Group("/api/v1")
 
 	// initialize server
 	s := &http.Server{
