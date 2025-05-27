@@ -5,6 +5,7 @@ import (
 	"fmt"
 	jwt "github.com/emmadal/feeti-module/auth"
 	status "github.com/emmadal/feeti-module/status"
+	"log"
 	"net/http"
 	"os"
 
@@ -75,6 +76,20 @@ func RemoveAccount(c *gin.Context) {
 
 	// Send success response and delete cookie
 	jwt.ClearAuthCookie(c, os.Getenv("HOST_URL"))
+
+	// record auth log
+	go func() {
+		authLog := models.AuthLog{
+			UserID:      user.ID,
+			PhoneNumber: user.PhoneNumber,
+			DeviceToken: user.DeviceToken,
+			Activity:    "remove_account",
+			Metadata:    `{"source": "remove_account"}`,
+		}
+		if err := authLog.CreateAuthLog(); err != nil {
+			log.Printf("Error creating auth log: %v\n", err)
+		}
+	}()
 
 	// Send success response
 	status.HandleSuccess(c, "Account removed successfully")

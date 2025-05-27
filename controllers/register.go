@@ -8,6 +8,7 @@ import (
 	jwt "github.com/emmadal/feeti-module/auth"
 	status "github.com/emmadal/feeti-module/status"
 	"github.com/gin-gonic/gin"
+	"log"
 	"net/http"
 	"os"
 )
@@ -80,6 +81,20 @@ func Register(c *gin.Context) {
 
 	// Set cookie
 	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"), false)
+
+	// record auth log
+	go func() {
+		authLog := models.AuthLog{
+			UserID:      user.ID,
+			PhoneNumber: user.PhoneNumber,
+			DeviceToken: user.DeviceToken,
+			Activity:    "register",
+			Metadata:    `{"source": "register"}`,
+		}
+		if err := authLog.CreateAuthLog(); err != nil {
+			log.Printf("Error creating auth log: %v\n", err)
+		}
+	}()
 
 	// Send success response
 	status.HandleSuccessData(

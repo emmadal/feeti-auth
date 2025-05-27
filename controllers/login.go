@@ -5,6 +5,7 @@ import (
 	"fmt"
 	jwt "github.com/emmadal/feeti-module/auth"
 	status "github.com/emmadal/feeti-module/status"
+	"log"
 
 	"golang.org/x/sync/errgroup"
 	"net/http"
@@ -156,6 +157,20 @@ func Login(c *gin.Context) {
 
 	// Set cookie
 	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"), false)
+
+	// record auth log
+	go func() {
+		authLog := models.AuthLog{
+			UserID:      user.ID,
+			PhoneNumber: user.PhoneNumber,
+			DeviceToken: user.DeviceToken,
+			Activity:    "login",
+			Metadata:    `{"source": "login"}`,
+		}
+		if err := authLog.CreateAuthLog(); err != nil {
+			log.Printf("Error creating auth log: %v\n", err)
+		}
+	}()
 
 	// Return success response
 	status.HandleSuccessData(

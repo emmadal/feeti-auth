@@ -18,12 +18,6 @@ type UserLogin struct {
 	DeviceToken string `json:"device_token" binding:"required,min=10,max=100"`
 }
 
-type Wallet struct {
-	ID       int64   `json:"id"`
-	Balance  float64 `json:"balance"`
-	Currency string  `json:"currency"`
-}
-
 // User is the struct for a user
 type User struct {
 	ID          int64     `json:"id" db:"id,omitempty"`
@@ -69,6 +63,12 @@ type RemoveUserAccount struct {
 	Pin         string `json:"pin" binding:"required,len=4,numeric"`
 }
 
+type Wallet struct {
+	ID       int64   `json:"id"`
+	Balance  float64 `json:"balance"`
+	Currency string  `json:"currency"`
+}
+
 type AuthResponse struct {
 	User   UserResponse `json:"user"`
 	Wallet Wallet       `json:"wallet"`
@@ -81,6 +81,16 @@ type UserResponse struct {
 	PhoneNumber string `json:"phone_number"`
 	Photo       string `json:"photo"`
 	DeviceToken string `json:"device_token"`
+}
+
+type AuthLog struct {
+	ID          int64     `json:"id" db:"id,omitempty"`
+	UserID      int64     `json:"user_id" db:"user_id"`
+	DeviceToken string    `json:"device_token" db:"device_token"`
+	Activity    string    `json:"activity" db:"activity"`
+	PhoneNumber string    `json:"phone_number" db:"phone_number"`
+	Metadata    string    `json:"metadata" db:"metadata"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at,omitempty"`
 }
 
 // UpdateUserPin updates the pin of a user
@@ -243,26 +253,12 @@ func (user *User) DeactivateUserAccount() error {
 		_ = tx.Rollback(ctx) // no-op if already committed
 	}()
 
-	batch := &pgx.Batch{}
-	batch.Queue(`UPDATE users SET is_active = $1, locked = $2, quota = $3 WHERE id = $4`, false, true, 3, user.ID)
-	batch.Queue(`UPDATE wallets SET is_active = $1, locked = $2 WHERE user_id = $3`, false, true, user.ID)
+	_, err = tx.Exec(ctx, `UPDATE users SET is_active = $1, locked = $2, quota = $3 WHERE id = $4`, false, true, 3, user.ID)
 
-	batchResults := tx.SendBatch(ctx, batch)
-
-	// Consume all batch results before continuing
-	for i := 0; i < 2; i++ {
-		if _, err := batchResults.Exec(); err != nil {
-			_ = batchResults.Close()
-			return err
-		}
-	}
-
-	// Now it's safe to close
-	if err := batchResults.Close(); err != nil {
+	if err != nil {
 		return err
 	}
 
-	// Then commit transaction
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
@@ -351,6 +347,40 @@ func (user *User) UpdateDeviceToken() error {
 		},
 	)
 	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// CreateAuthLog create auth log
+func (l *AuthLog) CreateAuthLog() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	tx, err := DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx) // no-op if already committed
+	}()
+
+	// Create wallet log
+	_, err = tx.Exec(
+		ctx,
+		`INSERT INTO users_logs (user_id, phone_number, device_token, activity, metadata) VALUES ($1,$2,$3,$4,$5)`,
+		l.UserID,
+		l.PhoneNumber,
+		l.DeviceToken,
+		l.Activity,
+		l.Metadata,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Then commit transaction
+	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
 	return nil

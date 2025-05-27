@@ -6,6 +6,7 @@ import (
 	jwt "github.com/emmadal/feeti-module/auth"
 	status "github.com/emmadal/feeti-module/status"
 	"github.com/gin-gonic/gin"
+	"log"
 	"net/http"
 	"os"
 )
@@ -66,7 +67,19 @@ func UpdatePin(c *gin.Context) {
 	// Replace old token with new one
 	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"), false)
 
-	//go helpers.SendPinMessage(body.PhoneNumber)
+	// record auth log
+	go func() {
+		authLog := models.AuthLog{
+			UserID:      user.ID,
+			PhoneNumber: user.PhoneNumber,
+			DeviceToken: user.DeviceToken,
+			Activity:    "update_pin",
+			Metadata:    `{"source": "update_pin"}`,
+		}
+		if err := authLog.CreateAuthLog(); err != nil {
+			log.Printf("Error creating auth log: %v\n", err)
+		}
+	}()
 
 	// Return success
 	status.HandleSuccess(c, "Your PIN has been updated. Please, do not share your password")
