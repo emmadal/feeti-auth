@@ -17,6 +17,9 @@ const subject = "wallet.lock"
 
 // RemoveAccount remove user account
 func RemoveAccount(c *gin.Context) {
+	// Increment counter for HTTP requests total to prometheus
+	helpers.HttpRequestsTotal.WithLabelValues(c.Request.URL.Path, c.Request.Method).Inc()
+
 	body := models.RemoveUserAccount{}
 	var response helpers.ResponsePayload
 

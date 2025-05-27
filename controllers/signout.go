@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"github.com/emmadal/feeti-backend-user/helpers"
 	"os"
 
 	jwt "github.com/emmadal/feeti-module/auth"
@@ -9,6 +10,9 @@ import (
 )
 
 func SignOut(c *gin.Context) {
+	// Increment counter for HTTP requests total to prometheus
+	helpers.HttpRequestsTotal.WithLabelValues(c.Request.URL.Path, c.Request.Method).Inc()
+
 	// Delete cookie
 	jwt.ClearAuthCookie(c, os.Getenv("HOST_URL"))
 

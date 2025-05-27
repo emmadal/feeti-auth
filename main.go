@@ -21,7 +21,13 @@ import (
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// Initialize Prometheus metrics
+func init() {
+	helpers.CollectHttpMetrics()
+}
 
 func main() {
 	// Load environment variables from the.env file if it exists,
@@ -39,7 +45,7 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = ":3000"
+		port = ":4000"
 	}
 
 	// Initialize Gin server
@@ -83,6 +89,7 @@ func main() {
 	v1.POST("/update-pin", jwt.AuthGin(jwtKey), controllers.UpdatePin)
 	v1.POST("/remove-account", jwt.AuthGin(jwtKey), controllers.RemoveAccount)
 	v1.POST("/sign-out", jwt.AuthGin(jwtKey), controllers.SignOut)
+	v1.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Subscription is now handled inside NatsConnect
 	if err := helpers.NatsConnect(); err != nil {

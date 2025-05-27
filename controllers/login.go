@@ -20,6 +20,9 @@ const MaxLoginAttempts = 3
 
 // Login handler to sign in a user
 func Login(c *gin.Context) {
+	// Increment counter for HTTP requests total to prometheus
+	helpers.HttpRequestsTotal.WithLabelValues(c.Request.URL.Path, c.Request.Method).Inc()
+
 	body := models.UserLogin{}
 	var response helpers.ResponsePayload
 	natsMsg := make(chan *nats.Msg, 1)
