@@ -1,4 +1,4 @@
-# Feeti User Service
+# Auth Service
 
 This service is responsible for managing user accounts and authentication for the Feeti platform.
 
@@ -6,15 +6,12 @@ This service is responsible for managing user accounts and authentication for th
 
 - User registration and login
 - PIN-based authentication
-- Two-factor authentication using one-time passwords (OTPs) sent via SMS
-- User account management (update PIN, reset PIN)
+- User account management (update PIN, reset PIN, deactivate account, etc.)
 
 ## Technology Stack
 
 - Go as the programming language
 - Gin as the web framework
-- New Relic for application performance monitoring
-- Twilio for SMS-based two-factor authentication
 - NATS for message queueing
 
 ## Running the Service
@@ -25,8 +22,6 @@ This service is responsible for managing user accounts and authentication for th
 - Docker
 - Docker Compose
 - A PostgreSQL database
-- A Twilio account for SMS-based two-factor authentication
-- A New Relic account for application performance monitoring
 - A NATS server for message queueing
 
 ## Development
@@ -38,4 +33,4 @@ This service is responsible for managing user accounts and authentication for th
 ### Building the Service
 
 1. Run `go build main.go` to build the service
-2. Run `docker build -t feeti-auth-service .` to build a Docker image of the service
+2. Run `docker build -t auth-service .` to build a Docker image of the service
