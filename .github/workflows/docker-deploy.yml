@@ -36,9 +36,13 @@ jobs:
           docker save localhost:5000/auth-service:${{ steps.image_tag.outputs.tag }} | gzip > ./docker-images/auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
 
       - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.5.4
+        uses: webfactory/ssh-agent@v0.8.0
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Test SSH connection
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "echo SSH connection successful"
 
       - name: Transfer Docker image to VPS
         run: |
@@ -381,6 +385,15 @@ jobs:
                     restartPolicy: OnFailure
           EOF
 
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Test SSH connection
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "echo SSH connection successful"
+
       - name: Prepare TLS secrets
         run: |
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
@@ -430,11 +443,6 @@ jobs:
               exit 1
             fi
           ENDSSH
-
-      - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.5.4
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
       - name: Transfer Kubernetes manifests to server
         run: |
@@ -618,9 +626,9 @@ jobs:
       - name: Notify deployment result
         run: |
           if [[ "${{ needs.deploy.result }}" == "success" ]]; then
-            echo "✅ Deployment successful - New version of auth-service is live"
+            echo " Deployment successful - New version of auth-service is live"
             # You could add actual notification code here (Slack, Email, etc.)
           else
-            echo "❌ Deployment failed - Check workflow logs for details"
+            echo " Deployment failed - Check workflow logs for details"
             # You could add actual notification code here (Slack, Email, etc.)
           fi
