@@ -28,12 +28,12 @@ jobs:
       - name: Build Docker image locally
         run: |
           # Build the docker image locally
-          docker build -t localhost:5000/feeti-auth-service:${{ steps.image_tag.outputs.tag }} .
-          docker tag localhost:5000/feeti-auth-service:${{ steps.image_tag.outputs.tag }} localhost:5000/feeti-auth-service:latest
+          docker build -t localhost:5000/auth-service:${{ steps.image_tag.outputs.tag }} .
+          docker tag localhost:5000/auth-service:${{ steps.image_tag.outputs.tag }} localhost:5000/auth-service:latest
           
           # Save image to a tarball
           mkdir -p ./docker-images
-          docker save localhost:5000/feeti-auth-service:${{ steps.image_tag.outputs.tag }} | gzip > ./docker-images/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
+          docker save localhost:5000/auth-service:${{ steps.image_tag.outputs.tag }} | gzip > ./docker-images/auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
 
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.5.4
@@ -43,28 +43,28 @@ jobs:
       - name: Transfer Docker image to VPS
         run: |
           # Transfer the image file to VPS
-          scp -o StrictHostKeyChecking=no ./docker-images/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/
+          scp -o StrictHostKeyChecking=no ./docker-images/auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/
 
       - name: Load Docker image on VPS
         run: |
           # Connect to VPS and load the image
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
             # Load the Docker image
-            docker load < /tmp/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
+            docker load < /tmp/auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
             
             # Remove the image file
-            rm /tmp/feeti-auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
+            rm /tmp/auth-service-${{ steps.image_tag.outputs.tag }}.tar.gz
             
             # Set up a local registry if not already running
             docker ps | grep -q registry || docker run -d -p 5000:5000 --restart always --name registry registry:2
             
             # Tag and push to local registry
-            docker tag localhost:5000/feeti-auth-service:${{ steps.image_tag.outputs.tag }} localhost:5000/feeti-auth-service:${{ steps.image_tag.outputs.tag }}
-            docker push localhost:5000/feeti-auth-service:${{ steps.image_tag.outputs.tag }}
+            docker tag localhost:5000/auth-service:${{ steps.image_tag.outputs.tag }} localhost:5000/auth-service:${{ steps.image_tag.outputs.tag }}
+            docker push localhost:5000/auth-service:${{ steps.image_tag.outputs.tag }}
             
             # Tag latest as well
-            docker tag localhost:5000/feeti-auth-service:${{ steps.image_tag.outputs.tag }} localhost:5000/feeti-auth-service:latest
-            docker push localhost:5000/feeti-auth-service:latest
+            docker tag localhost:5000/auth-service:${{ steps.image_tag.outputs.tag }} localhost:5000/auth-service:latest
+            docker push localhost:5000/auth-service:latest
           ENDSSH
 
   deploy:
@@ -73,7 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IMAGE_TAG: ${{ needs.build-and-transfer.outputs.image_tag }}
-      IMAGE_PATH: localhost:5000/feeti-auth-service:${{ needs.build-and-transfer.outputs.image_tag }}
+      IMAGE_PATH: localhost:5000/auth-service:${{ needs.build-and-transfer.outputs.image_tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -81,10 +81,10 @@ jobs:
       - name: Generate Kubernetes manifests
         run: |
           # Create manifests directory
-          mkdir -p ./k8s
+          mkdir -p ./k8s-auth
           
           # Generate namespace.yaml
-          cat <<EOF > ./k8s/namespace.yaml
+          cat <<EOF > ./k8s-auth/namespace.yaml
           apiVersion: v1
           kind: Namespace
           metadata:
@@ -92,7 +92,7 @@ jobs:
           EOF
           
           # Generate configmap.yaml
-          cat <<EOF > ./k8s/configmap.yaml
+          cat <<EOF > ./k8s-auth/configmap.yaml
           apiVersion: v1
           kind: ConfigMap
           metadata:
@@ -101,12 +101,12 @@ jobs:
           data:
             NODE_ENV: "production"
             SERVICE_NAME: "auth-service"
-            PORT: ":3000"
+            PORT: ":4000"
             LOG_LEVEL: "info"
           EOF
           
           # Generate network-policy.yaml
-          cat <<EOF > ./k8s/network-policy.yaml
+          cat <<EOF > ./k8s-auth/network-policy.yaml
           apiVersion: networking.k8s.io/v1
           kind: NetworkPolicy
           metadata:
@@ -126,10 +126,10 @@ jobs:
                     name: ingress-nginx
               ports:
               - protocol: TCP
-                port: 3000
+                port: 4000
             - ports:
               - protocol: TCP
-                port: 3000
+                port: 4000
             egress:
             - to:
               - ipBlock:
@@ -146,7 +146,7 @@ jobs:
           EOF
           
           # Generate auth-service.yaml
-          cat <<EOF > ./k8s/auth-service.yaml
+          cat <<EOF > ./k8s-auth/auth-service.yaml
           apiVersion: v1
           kind: Service
           metadata:
@@ -157,15 +157,15 @@ jobs:
               app: auth-service
             ports:
             - name: http
-              port: 3000
-              targetPort: 3000
+              port: 4000
+              targetPort: 4000
               nodePort: 30000
               protocol: TCP
             type: NodePort
           EOF
           
           # Generate simplified ingress.yaml for basic routing only
-          cat <<EOF > ./k8s/ingress.yaml
+          cat <<EOF > ./k8s-auth/ingress.yaml
           apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
@@ -182,11 +182,11 @@ jobs:
                     service:
                       name: auth-service
                       port:
-                        number: 3000
+                        number: 4000
           EOF
           
           # Generate auth-ingress.yaml (simplified)
-          cat <<EOF > ./k8s/auth-ingress.yaml
+          cat <<EOF > ./k8s-auth/auth-ingress.yaml
           apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
@@ -203,11 +203,11 @@ jobs:
                     service:
                       name: auth-service
                       port:
-                        number: 3000
+                        number: 4000
           EOF
           
           # Generate auth-deployment.yaml - using locally available image
-          cat <<EOF > ./k8s/auth-deployment.yaml
+          cat <<EOF > ./k8s-auth/auth-deployment.yaml
           apiVersion: apps/v1
           kind: Deployment
           metadata:
@@ -230,7 +230,7 @@ jobs:
                   image: ${IMAGE_PATH}
                   imagePullPolicy: Always
                   ports:
-                  - containerPort: 3000
+                  - containerPort: 4000
                   resources:
                     limits:
                       cpu: "0.5"
@@ -240,7 +240,7 @@ jobs:
                       memory: "256Mi"
                   env:
                   - name: PORT
-                    value: ":3000"
+                    value: ":4000"
                   - name: NODE_ENV
                     valueFrom:
                       configMapKeyRef:
@@ -276,20 +276,10 @@ jobs:
                       secretKeyRef:
                         name: auth-secrets
                         key: DATABASE_URL
-                  - name: TWILIO_ACCOUNT_SID
-                    valueFrom:
-                      secretKeyRef:
-                        name: auth-secrets
-                        key: TWILIO_ACCOUNT_SID
-                  - name: TWILIO_AUTH_TOKEN
-                    valueFrom:
-                      secretKeyRef:
-                        name: auth-secrets
-                        key: TWILIO_AUTH_TOKEN
                   startupProbe:
                     httpGet:
                       path: /api/v1/healthz
-                      port: 3000
+                      port: 4000
                     initialDelaySeconds: 10
                     periodSeconds: 5
                     timeoutSeconds: 3
@@ -297,7 +287,7 @@ jobs:
                   livenessProbe:
                     httpGet:
                       path: /api/v1/healthz
-                      port: 3000
+                      port: 4000
                     initialDelaySeconds: 60
                     periodSeconds: 20
                     timeoutSeconds: 5
@@ -305,7 +295,7 @@ jobs:
                   readinessProbe:
                     httpGet:
                       path: /api/v1/healthz
-                      port: 3000
+                      port: 4000
                     initialDelaySeconds: 30
                     periodSeconds: 10
                     timeoutSeconds: 5
@@ -313,7 +303,7 @@ jobs:
           EOF
           
           # Generate auth-hpa.yaml
-          cat <<EOF > ./k8s/auth-hpa.yaml
+          cat <<EOF > ./k8s-auth/auth-hpa.yaml
           apiVersion: autoscaling/v2
           kind: HorizontalPodAutoscaler
           metadata:
@@ -342,7 +332,7 @@ jobs:
           EOF
           
           # Generate health-check.yaml
-          cat <<EOF > ./k8s/health-check.yaml
+          cat <<EOF > ./k8s-auth/health-check.yaml
           apiVersion: batch/v1
           kind: CronJob
           metadata:
@@ -363,7 +353,7 @@ jobs:
                       - /bin/sh
                       - -c
                       - |
-                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:3000/api/v1/healthz | grep
+                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:4000/api/v1/healthz | grep
           -q 200; then
                           echo "Health check passed"
                           exit 0
@@ -399,13 +389,13 @@ jobs:
       - name: Transfer Kubernetes manifests to server
         run: |
           # Create directory on remote server
-          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p /tmp/k8s"
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p /tmp/k8s-auth"
           
           # Copy all manifests to the server
-          scp -o StrictHostKeyChecking=no ./k8s/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/k8s/
+          scp -o StrictHostKeyChecking=no ./k8s-auth/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/k8s-auth/
           
           # List the files to confirm transfer
-          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "ls -la /tmp/k8s/"
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "ls -la /tmp/k8s-auth/"
 
       - name: Clean up old resources
         run: |
@@ -422,7 +412,7 @@ jobs:
       - name: Run kubectl apply with validation
         run: |
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
-            cd /tmp/k8s
+            cd /tmp/k8s-auth
             
             # Create namespace if it doesn't exist
             kubectl apply -f namespace.yaml
@@ -432,13 +422,11 @@ jobs:
             kubectl create secret generic auth-secrets \
               --namespace=feeti-auth \
               --from-literal=JWT_KEY='${{ secrets.JWT_KEY }}' \
-              --from-literal=TWILIO_ACCOUNT_SID='${{ secrets.TWILIO_ACCOUNT_SID }}' \
-              --from-literal=TWILIO_AUTH_TOKEN='${{ secrets.TWILIO_AUTH_TOKEN }}' \
               --from-literal=DATABASE_URL='${{ secrets.DATABASE_URL }}' \
               --from-literal=HOST_URL='${{ secrets.HOST_URL }}' \
               --from-literal=NATS_URL='${{ secrets.NATS_URL }}' \
               --from-literal=GIN_MODE='release' \
-              --from-literal=PORT=':3000' \
+              --from-literal=PORT=':4000' \
               --dry-run=client -o yaml | kubectl apply -f -
             
             # Apply remaining manifests in correct order
@@ -525,13 +513,13 @@ jobs:
             # Test paths directly on the service to verify routes
             echo "Testing service endpoints directly (this should work)..."
             kubectl -n feeti-auth run curl-test --image=curlimages/curl --rm -i --restart=Never -- \
-              curl --max-time 5 http://auth-service:3000/healthz || echo "Health endpoint may have different path"
+              curl --max-time 3 http://auth-service:4000/healthz || echo "Health endpoint may have different path"
             
             # Get information about available routes
             echo "Application routes analysis - tracing all endpoints:"
             kubectl -n feeti-auth exec deployment/auth-service -c auth-service -- printenv || echo "Could not get environment"
             kubectl -n feeti-auth run curl-test-path --image=curlimages/curl --rm -i --restart=Never -- \
-              curl --max-time 5 -v http://auth-service:3000/ || echo "Root path test failed"
+              curl --max-time 3 -v http://auth-service:4000/ || echo "Root path test failed"
               
             echo "Checking endpoints..."
             kubectl -n feeti-auth get endpoints
@@ -564,7 +552,7 @@ jobs:
       - name: Notify deployment result
         run: |
           if [[ "${{ needs.deploy.result }}" == "success" ]]; then
-            echo "✅ Deployment successful - New version of feeti-auth-service is live"
+            echo "✅ Deployment successful - New version of auth-service is live"
             # You could add actual notification code here (Slack, Email, etc.)
           else
             echo "❌ Deployment failed - Check workflow logs for details"
