@@ -26,16 +26,6 @@ func createTables() error {
 			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		);`,
-		`CREATE TABLE IF NOT EXISTS otp (
-			id SERIAL PRIMARY KEY,
-			code VARCHAR(7) NOT NULL,
-			is_used BOOLEAN DEFAULT FALSE NOT NULL,
-			phone_number VARCHAR(18) NOT NULL,
-			key_uid VARCHAR(100) NOT NULL,
-			expiry_at TIMESTAMP,
-			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-		);`,
 		`CREATE INDEX IF NOT EXISTS idx_users_lookup ON users (phone_number, is_active, quota, locked, premium);`,
 	}
 	for _, query := range queries {
