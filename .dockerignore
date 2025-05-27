@@ -8,7 +8,7 @@ benchmark/
 /api_request
 
 # Ignore the compiled binary (if present in local)
-backenduser
+auth-service
 
 # Ignore common Go environment files
 *.exe
@@ -16,30 +16,39 @@ backenduser
 *.test
 *.yml
 
-# Node.js related (if there’s a frontend, or node_modules in the project)
+# Node.js related (if there's a frontend, or node_modules in the project)
 node_modules
 npm-debug.log
-yarn-error.log
 
-# Exclude test and local configuration files
-*.env.*
-!.env # Keep the main .env file
-*.log
-*.tmp
-
-# Version control files
+# Git related
 .git
 .gitignore
-.gitattributes
+.github
 
-# Editor-specific files
-.vscode/
+# Documentation
+*.md
+README.md
+docs/
+
+# Local development files
+.env
+.env.*
+*.log
+*.log.*
+*.tmp
+
+# Test and coverage files
+coverage/
+*.coverage
+*.coverprofile
+
+# Editor specific files
 .idea/
-.qodo/
-.DS_Store
-.github/ # GitHub specific files
-.commitlnt/ # Commitlint configuration
+.vscode/
+*.swp
+*.swo
+*~
 
-# Docker files
-Dockerfile*
-.dockerignore
+# OS generated files
+.DS_Store
+Thumbs.db
