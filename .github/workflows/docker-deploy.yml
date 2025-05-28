@@ -176,15 +176,9 @@ jobs:
             name: auth-service-ingress
             namespace: feeti-auth
             annotations:
-              nginx.ingress.kubernetes.io/ssl-redirect: "true"
-              nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
               nginx.ingress.kubernetes.io/proxy-body-size: "10m"
           spec:
             ingressClassName: nginx
-            tls:
-            - hosts:
-              - ${{ secrets.HOST_URL }}
-              secretName: feeti-tls
             rules:
             - host: ${{ secrets.HOST_URL }}
               http:
@@ -205,15 +199,8 @@ jobs:
           metadata:
             name: auth-healthz-ingress
             namespace: feeti-auth
-            annotations:
-              nginx.ingress.kubernetes.io/ssl-redirect: "true"
-              nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
           spec:
             ingressClassName: nginx
-            tls:
-            - hosts:
-              - ${{ secrets.HOST_URL }}
-              secretName: feeti-tls
             rules:
             - host: ${{ secrets.HOST_URL }}
               http:
@@ -374,8 +361,7 @@ jobs:
                       - /bin/sh
                       - -c
                       - |
-                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:4000/api/v1/healthz | grep
-          -q 200; then
+                        if curl -s -o /dev/null -w "%{http_code}" http://auth-service:4000/api/v1/healthz | grep -q 200; then
                           echo "Health check passed"
                           exit 0
                         else
@@ -393,56 +379,6 @@ jobs:
       - name: Test SSH connection
         run: |
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "echo SSH connection successful"
-
-      - name: Prepare TLS secrets
-        run: |
-          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -p 22 ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
-            # Create TLS secret for HTTPS
-            echo "Creating TLS secret from Let's Encrypt certificates..."
-            
-            # Path to Let's Encrypt certificates
-            CERT_PATH="/etc/letsencrypt/live/${{ secrets.HOST_URL }}"
-            
-            # Check if certificates exist
-            if [ -d "$CERT_PATH" ]; then
-              # Check if we have read permissions, if not use sudo to copy to a temporary location
-              if [ ! -r "$CERT_PATH/fullchain.pem" ] || [ ! -r "$CERT_PATH/privkey.pem" ]; then
-                echo "Copying certificates to temporary location with sudo..."
-                sudo cp "$CERT_PATH/fullchain.pem" /tmp/fullchain.pem
-                sudo cp "$CERT_PATH/privkey.pem" /tmp/privkey.pem
-                sudo chmod 644 /tmp/fullchain.pem /tmp/privkey.pem
-                
-                # Create TLS secret using temporary files
-                kubectl create secret tls feeti-tls \
-                  --cert=/tmp/fullchain.pem \
-                  --key=/tmp/privkey.pem \
-                  --namespace=feeti-auth \
-                  --dry-run=client -o yaml | kubectl apply -f -
-                
-                # Clean up temporary files
-                rm -f /tmp/fullchain.pem /tmp/privkey.pem
-              else
-                # Create TLS secret directly
-                kubectl create secret tls feeti-tls \
-                  --cert="$CERT_PATH/fullchain.pem" \
-                  --key="$CERT_PATH/privkey.pem" \
-                  --namespace=feeti-auth \
-                  --dry-run=client -o yaml | kubectl apply -f -
-              fi
-              
-              # Also create the same TLS secret in the wallet namespace
-              kubectl get namespace feeti-wallet >/dev/null 2>&1 || kubectl create namespace feeti-wallet
-              kubectl get secret feeti-tls -n feeti-auth -o yaml | \
-                sed 's/namespace: feeti-auth/namespace: feeti-wallet/' | \
-                kubectl apply -f -
-              
-              echo "TLS secret 'feeti-tls' created successfully in both namespaces."
-            else
-              echo "ERROR: Let's Encrypt certificates not found at $CERT_PATH"
-              echo "Please ensure that Let's Encrypt certificates are properly installed."
-              exit 1
-            fi
-          ENDSSH
 
       - name: Transfer Kubernetes manifests to server
         run: |
@@ -476,13 +412,6 @@ jobs:
             kubectl apply -f namespace.yaml
             kubectl apply -f configmap.yaml
             
-            # Configure NGINX Ingress Controller for SSL termination
-            echo "Configuring NGINX Ingress Controller for SSL termination..."
-            kubectl get configmap -n ingress-nginx nginx-configuration -o yaml | \
-              sed -e 's/# ConfigMap for NGINX Configuration/# ConfigMap for NGINX Configuration with SSL/g' | \
-              sed -e '/data:/a\  ssl-protocols: "TLSv1.2 TLSv1.3"\n  ssl-ciphers: "HIGH:!aNULL:!MD5"\n  proxy-buffer-size: "16k"' | \
-              kubectl apply -f -
-            
             # Create or update Kubernetes secrets first
             kubectl create secret generic auth-secrets \
               --namespace=feeti-auth \
@@ -505,13 +434,6 @@ jobs:
             # Apply deployment last to ensure all other resources are ready
             kubectl apply -f auth-deployment.yaml
             kubectl apply -f auth-hpa.yaml
-            
-            # Restart NGINX Ingress Controller to apply SSL settings
-            echo "Restarting NGINX Ingress Controller to apply SSL settings..."
-            kubectl -n ingress-nginx rollout restart deployment ingress-nginx-controller
-            
-            # Wait for NGINX Ingress to restart
-            kubectl -n ingress-nginx rollout status deployment ingress-nginx-controller --timeout=60s
             
             # Validate deployment status with increased timeout
             echo "Waiting for deployment to begin rolling out..."
@@ -599,21 +521,16 @@ jobs:
             echo "Checking Ingress configuration details:"
             kubectl -n feeti-auth describe ingress
             
-            echo "Testing SSL certificate configuration..."
-            # Check if curl with https works (verifying SSL setup)
-            kubectl -n feeti-auth run curl-test-ssl --image=curlimages/curl --rm -i --restart=Never -- \
-              curl --max-time 10 -v -k https://${{ secrets.HOST_URL }}/api/v1/healthz || echo "HTTPS test failed"
-            
             echo "Deployment completed successfully. Your service should be available at:"
-            echo "For API: https://${{ secrets.HOST_URL }}/api/v1"
-            echo "For health endpoint: https://${{ secrets.HOST_URL }}/healthz"
+            echo "For API: http://${{ secrets.HOST_URL }}/api/v1"
+            echo "For health endpoint: http://${{ secrets.HOST_URL }}/healthz"
           ENDSSH
 
       - name: Send success notification
         if: success()
         run: |
-          echo "Successfully deployed auth-service with HTTPS."
-          echo "Service is now available at https://${{ secrets.HOST_URL }}/api/v1"
+          echo "Successfully deployed auth-service."
+          echo "Service is now available at http://${{ secrets.HOST_URL }}/api/v1"
           
           # You can add other notification methods here (Slack, Discord, etc.)
 
