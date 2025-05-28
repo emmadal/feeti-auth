@@ -18,7 +18,7 @@ func Register(c *gin.Context) {
 	// Increment counter for HTTP requests total to prometheus
 	helpers.HttpRequestsTotal.WithLabelValues(c.Request.URL.Path, c.Request.Method).Inc()
 
-	body := models.User{}
+	var body models.User
 	var response helpers.ResponsePayload
 
 	// Validate the request body

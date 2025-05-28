@@ -24,7 +24,7 @@ func Login(c *gin.Context) {
 	// Increment counter for HTTP requests total to prometheus
 	helpers.HttpRequestsTotal.WithLabelValues(c.Request.URL.Path, c.Request.Method).Inc()
 
-	body := models.UserLogin{}
+	var body models.UserLogin
 	var response helpers.ResponsePayload
 	natsMsg := make(chan *nats.Msg, 1)
 

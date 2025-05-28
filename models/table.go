@@ -30,7 +30,6 @@ func createTables() error {
 			id SERIAL PRIMARY KEY,
 			user_id BIGINT NOT NULL,
 			device_token VARCHAR(100) NOT NULL,
-			wallet_id BIGINT NOT NULL,
 			phone_number VARCHAR(18) NOT NULL,
 			activity VARCHAR(50) NOT NULL, -- 'login', 'logout', etc.	
 			metadata JSONB, -- optional extra info (e.g. payment method, ref number)
