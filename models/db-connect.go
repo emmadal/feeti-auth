@@ -16,6 +16,7 @@ var (
 	once sync.Once
 )
 
+// DBConnect is a function to connect to the database
 func DBConnect() {
 	once.Do(
 		func() {
