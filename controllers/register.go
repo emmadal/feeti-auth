@@ -80,7 +80,7 @@ func Register(c *gin.Context) {
 	}
 
 	// Set cookie
-	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"), false)
+	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"))
 
 	// record auth log
 	go func() {

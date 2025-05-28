@@ -65,7 +65,7 @@ func UpdatePin(c *gin.Context) {
 	}
 
 	// Replace old token with new one
-	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"), false)
+	jwt.SetSecureCookie(c, token, os.Getenv("HOST_URL"))
 
 	// record auth log
 	go func() {
