@@ -15,7 +15,7 @@ func SignOut(c *gin.Context) {
 	helpers.HttpRequestsTotal.WithLabelValues(c.Request.URL.Path, c.Request.Method).Inc()
 
 	// Delete cookie
-	jwt.ClearAuthCookie(c, os.Getenv("HOST_URL"))
+	jwt.ClearAuthCookie(c, os.Getenv("DOMAIN"))
 
 	// Return success response
 	status.HandleSuccess(c, "Successfully signed out")

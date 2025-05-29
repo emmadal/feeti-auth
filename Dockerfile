@@ -10,6 +10,7 @@ ARG HOST_URL
 ARG NATS_URL
 ARG GIN_MODE
 ARG DATABASE_URL
+ARG DOMAIN
 
 # Set environment variables for build
 ENV PORT=$PORT \
@@ -17,6 +18,7 @@ ENV PORT=$PORT \
     HOST_URL=$HOST_URL \
     GIN_MODE=$GIN_MODE \
     NATS_URL=$NATS_URL \
+    DOMAIN=$DOMAIN \
     DATABASE_URL=$DATABASE_URL
 
 # Copy go.mod and go.sum first to cache dependencies
