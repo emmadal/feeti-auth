@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/emmadal/feeti-backend-user/models"
+	"github.com/emmadal/feeti-auth/models"
 	"github.com/nats-io/nats.go"
 	"log"
 	"os"

@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/emmadal/feeti-backend-user/helpers"
+	"github.com/emmadal/feeti-auth/helpers"
 	"github.com/emmadal/feeti-module/middleware"
 
-	"github.com/emmadal/feeti-backend-user/controllers"
-	"github.com/emmadal/feeti-backend-user/models"
+	"github.com/emmadal/feeti-auth/controllers"
+	"github.com/emmadal/feeti-auth/models"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
@@ -64,7 +64,7 @@ func main() {
 		),
 	)
 	server.Use(gzip.Gzip(gzip.BestCompression))
-	server.Use(middleware.Timeout(5 * time.Second))
+	server.Use(middleware.Timeout(30 * time.Second))
 	server.Use(middleware.Recover())
 
 	// Set api version group
@@ -74,9 +74,9 @@ func main() {
 	s := &http.Server{
 		Handler:        server,
 		Addr:           port,
-		WriteTimeout:   10 * time.Second,
-		ReadTimeout:    10 * time.Second,
-		IdleTimeout:    20 * time.Second,
+		WriteTimeout:   30 * time.Second,
+		ReadTimeout:    30 * time.Second,
+		IdleTimeout:    60 * time.Second,
 		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 

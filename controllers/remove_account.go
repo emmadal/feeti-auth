@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/emmadal/feeti-backend-user/helpers"
-	"github.com/emmadal/feeti-backend-user/models"
+	"github.com/emmadal/feeti-auth/helpers"
+	"github.com/emmadal/feeti-auth/models"
 	"github.com/gin-gonic/gin"
 )
 

@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"github.com/emmadal/feeti-backend-user/helpers"
+	"github.com/emmadal/feeti-auth/helpers"
 	status "github.com/emmadal/feeti-module/status"
 	"github.com/gin-gonic/gin"
 	"time"

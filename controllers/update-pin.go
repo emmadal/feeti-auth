@@ -1,8 +1,8 @@
 package controllers
 
 import (
-	"github.com/emmadal/feeti-backend-user/helpers"
-	"github.com/emmadal/feeti-backend-user/models"
+	"github.com/emmadal/feeti-auth/helpers"
+	"github.com/emmadal/feeti-auth/models"
 	jwt "github.com/emmadal/feeti-module/auth"
 	status "github.com/emmadal/feeti-module/status"
 	"github.com/gin-gonic/gin"

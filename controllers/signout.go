@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"github.com/emmadal/feeti-backend-user/helpers"
+	"github.com/emmadal/feeti-auth/helpers"
 	"os"
 
 	jwt "github.com/emmadal/feeti-module/auth"
