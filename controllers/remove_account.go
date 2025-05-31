@@ -3,15 +3,13 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
-	jwt "github.com/emmadal/feeti-module/auth"
-	status "github.com/emmadal/feeti-module/status"
-	"log"
-	"net/http"
-	"os"
-
 	"github.com/emmadal/feeti-auth/helpers"
 	"github.com/emmadal/feeti-auth/models"
+	jwt "github.com/emmadal/feeti-module/auth"
+	status "github.com/emmadal/feeti-module/status"
 	"github.com/gin-gonic/gin"
+	"log"
+	"net/http"
 )
 
 const subject = "wallet.lock"
@@ -75,7 +73,7 @@ func RemoveAccount(c *gin.Context) {
 	}
 
 	// Send success response and delete cookie
-	jwt.ClearAuthCookie(c, os.Getenv("HOST_URL"))
+	jwt.ClearAuthCookie(c, "")
 
 	// record auth log
 	go func() {

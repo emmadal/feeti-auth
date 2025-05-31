@@ -2,8 +2,6 @@ package controllers
 
 import (
 	"github.com/emmadal/feeti-auth/helpers"
-	"os"
-
 	jwt "github.com/emmadal/feeti-module/auth"
 	status "github.com/emmadal/feeti-module/status"
 	"github.com/gin-gonic/gin"
@@ -15,7 +13,7 @@ func SignOut(c *gin.Context) {
 	helpers.HttpRequestsTotal.WithLabelValues(c.Request.URL.Path, c.Request.Method).Inc()
 
 	// Delete cookie
-	jwt.ClearAuthCookie(c, os.Getenv("DOMAIN"))
+	jwt.ClearAuthCookie(c, "")
 
 	// Return success response
 	status.HandleSuccess(c, "Successfully signed out")
