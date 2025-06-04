@@ -2,17 +2,15 @@ package controllers
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/emmadal/feeti-auth/helpers"
 	"github.com/emmadal/feeti-auth/models"
 	jwt "github.com/emmadal/feeti-module/auth"
 	status "github.com/emmadal/feeti-module/status"
+	"github.com/emmadal/feeti-module/subject"
 	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
 )
-
-const subject = "wallet.lock"
 
 // RemoveAccount remove user account
 func RemoveAccount(c *gin.Context) {
@@ -36,8 +34,7 @@ func RemoveAccount(c *gin.Context) {
 	}
 
 	// verify user identity with context data
-	id, _ := jwt.GetUserIDFromGin(c)
-	if user.ID != id {
+	if user.ID != jwt.GetUserIDFromGin(c) {
 		status.HandleError(c, http.StatusForbidden, "Unauthorized user", err)
 		return
 	}
@@ -50,8 +47,8 @@ func RemoveAccount(c *gin.Context) {
 
 	// publish a request to get wallet data
 	request := helpers.RequestPayload{
-		Subject: subject,
-		Data:    fmt.Sprintf("%d", user.ID),
+		Subject: subject.SubjectWalletLock,
+		Data:    user.ID.String(),
 	}
 	resp, err := request.PublishEvent()
 	if err != nil {

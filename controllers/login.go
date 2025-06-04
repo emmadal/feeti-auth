@@ -5,6 +5,8 @@ import (
 	"fmt"
 	jwt "github.com/emmadal/feeti-module/auth"
 	status "github.com/emmadal/feeti-module/status"
+	"github.com/emmadal/feeti-module/subject"
+	"github.com/google/uuid"
 	"log"
 
 	"golang.org/x/sync/errgroup"
@@ -65,7 +67,7 @@ func Login(c *gin.Context) {
 			func() error {
 				// send a nats message to lock wallet
 				pMessage := helpers.RequestPayload{
-					Subject: "wallet.lock",
+					Subject: subject.SubjectWalletLock,
 					Data:    fmt.Sprintf("%d", userStruct.ID),
 				}
 				resp, err := pMessage.PublishEvent()
@@ -108,8 +110,8 @@ func Login(c *gin.Context) {
 
 	// publish a request to get wallet data
 	pMessage := helpers.RequestPayload{
-		Subject: "wallet.balance",
-		Data:    fmt.Sprintf("%d", user.ID),
+		Subject: subject.SubjectWalletBalance,
+		Data:    user.ID.String(),
 	}
 	resp, err := pMessage.PublishEvent()
 	if err != nil {
@@ -127,7 +129,7 @@ func Login(c *gin.Context) {
 	// Convert response.Data from map[string]interface{} to models.Wallet
 	walletData := response.Data.(map[string]any)
 	wallet := models.Wallet{
-		ID:       int64(walletData["id"].(float64)),
+		ID:       uuid.MustParse(walletData["id"].(string)),
 		Balance:  walletData["balance"].(float64),
 		Currency: walletData["currency"].(string),
 	}
@@ -149,6 +151,7 @@ func Login(c *gin.Context) {
 
 	// Update device token only if changed
 	if user.DeviceToken != body.DeviceToken {
+		user.DeviceToken = body.DeviceToken
 		if err := user.UpdateDeviceToken(); err != nil {
 			status.HandleError(c, http.StatusInternalServerError, "Unable to update device token", err)
 			return

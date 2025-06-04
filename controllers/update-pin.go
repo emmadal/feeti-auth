@@ -32,8 +32,7 @@ func UpdatePin(c *gin.Context) {
 	}
 
 	// verify user identity with context data
-	id, _ := jwt.GetUserIDFromGin(c)
-	if user.ID != id {
+	if user.ID != jwt.GetUserIDFromGin(c) {
 		status.HandleError(c, http.StatusForbidden, "Unauthorized user", err)
 		return
 	}

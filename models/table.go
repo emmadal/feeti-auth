@@ -12,11 +12,11 @@ func createTables() error {
 
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS users (
-			id SERIAL PRIMARY KEY,
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			first_name VARCHAR(100) NOT NULL,
 			last_name VARCHAR(100) NOT NULL,
 			phone_number VARCHAR(18) UNIQUE NOT NULL,
-			device_token VARCHAR(100) NOT NULL,
+			device_token Text NOT NULL,
 			pin VARCHAR(100) NOT NULL,
 			quota BIGINT DEFAULT 0 NOT NULL,
 			locked BOOLEAN DEFAULT FALSE NOT NULL,
@@ -27,9 +27,9 @@ func createTables() error {
 			updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		);`,
 		`CREATE TABLE IF NOT EXISTS users_logs (
-			id SERIAL PRIMARY KEY,
-			user_id BIGINT NOT NULL,
-			device_token VARCHAR(100) NOT NULL,
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID NOT NULL,
+			device_token Text NOT NULL,
 			phone_number VARCHAR(18) NOT NULL,
 			activity VARCHAR(50) NOT NULL, -- 'login', 'logout', etc.	
 			metadata JSONB, -- optional extra info (e.g. payment method, ref number)

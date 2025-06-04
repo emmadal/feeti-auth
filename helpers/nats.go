@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/emmadal/feeti-auth/models"
+	"github.com/emmadal/feeti-module/subject"
 	"github.com/nats-io/nats.go"
 	"log"
 	"os"
@@ -27,10 +28,6 @@ type NatsConfig struct {
 	ReconnectWait time.Duration
 	Replicas      int
 }
-
-const (
-	subjectAuth = "auth.get.user"
-)
 
 // ResponsePayload represents the standard response structure
 type ResponsePayload struct {
@@ -129,12 +126,12 @@ func NatsConnect() error {
 			// Check for errors
 			for i, err := range []error{err1} {
 				if err != nil {
-					subject := ""
+					topic := ""
 					switch i {
 					case 0:
-						subject = subjectAuth
+						topic = subject.SubjectUserGet
 					}
-					log.Printf("Failed to subscribe to %s: %v\n", subject, err)
+					log.Printf("Failed to subscribe to %s: %v\n", topic, err)
 				}
 			}
 			log.Println("All NATS subscriptions established")
@@ -208,7 +205,7 @@ func subscribeToGetUser(wg *sync.WaitGroup) error {
 	defer wg.Done()
 
 	// Subscribe to the subjectAuth subject
-	sub, err := nc.Subscribe(subjectAuth, func(msg *nats.Msg) {
+	sub, err := nc.Subscribe(subject.SubjectUserGet, func(msg *nats.Msg) {
 		startTime := time.Now()
 		log.Printf("Received message [%s] on subject %s\n", string(msg.Data), msg.Subject)
 
@@ -245,12 +242,12 @@ func subscribeToGetUser(wg *sync.WaitGroup) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to %s: %w", subjectAuth, err)
+		return fmt.Errorf("failed to subscribe to %s: %w", subject.SubjectUserGet, err)
 	}
 
 	// Keep subscription active - don't auto-unsubscribe
 	if err := sub.SetPendingLimits(-1, -1); err != nil {
-		log.Printf("Failed to set pending limits for %s: %v\n", subjectAuth, err)
+		log.Printf("Failed to set pending limits for %s: %v\n", subject.SubjectUserGet, err)
 	}
 
 	// Register this subscription for cleanup

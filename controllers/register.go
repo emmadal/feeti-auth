@@ -2,12 +2,13 @@ package controllers
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/emmadal/feeti-auth/helpers"
 	"github.com/emmadal/feeti-auth/models"
 	jwt "github.com/emmadal/feeti-module/auth"
 	status "github.com/emmadal/feeti-module/status"
+	"github.com/emmadal/feeti-module/subject"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"log"
 	"net/http"
 	"os"
@@ -50,8 +51,8 @@ func Register(c *gin.Context) {
 
 	// create a user wallet
 	pMessage := helpers.RequestPayload{
-		Subject: "wallet.create",
-		Data:    fmt.Sprintf("%d", user.ID),
+		Subject: subject.SubjectWalletCreate,
+		Data:    user.ID.String(),
 	}
 
 	// Send the initial wallet creation request
@@ -67,7 +68,7 @@ func Register(c *gin.Context) {
 	// Convert response.Data from map[string]interface{} to models.Wallet
 	walletData := response.Data.(map[string]any)
 	wallet := models.Wallet{
-		ID:       int64(walletData["id"].(float64)),
+		ID:       uuid.MustParse(walletData["id"].(string)),
 		Balance:  walletData["balance"].(float64),
 		Currency: walletData["currency"].(string),
 	}

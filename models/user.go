@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -13,18 +14,18 @@ import (
 
 // UserLogin is the struct for user login
 type UserLogin struct {
-	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
+	PhoneNumber string `json:"phone_number" binding:"required,e164"`
 	Pin         string `json:"pin" binding:"required,len=4,numeric"`
-	DeviceToken string `json:"device_token" binding:"required,min=10,max=100"`
+	DeviceToken string `json:"device_token" binding:"required"`
 }
 
 // User is the struct for a user
 type User struct {
-	ID          int64     `json:"id" db:"id,omitempty"`
+	ID          uuid.UUID `json:"id" db:"id,omitempty"`
 	FirstName   string    `json:"first_name" db:"first_name" binding:"required,alpha,min=3,max=100"`
 	LastName    string    `json:"last_name" db:"last_name" binding:"required,alpha,min=3,max=100"`
-	PhoneNumber string    `json:"phone_number" db:"phone_number" binding:"required,e164,min=11,max=14"`
-	DeviceToken string    `json:"device_token" db:"device_token" binding:"required,min=10,max=100"`
+	PhoneNumber string    `json:"phone_number" db:"phone_number" binding:"required,e164"`
+	DeviceToken string    `json:"device_token" db:"device_token" binding:"required"`
 	Pin         string    `json:"pin" db:"pin" binding:"required,len=4,numeric"`
 	Quota       uint      `json:"quota" db:"quota"`
 	Locked      bool      `json:"locked" db:"locked"`
@@ -36,14 +37,14 @@ type User struct {
 
 // Login is the struct for login
 type Login struct {
-	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
+	PhoneNumber string `json:"phone_number" binding:"required,e164"`
 	Pin         string `json:"pin" binding:"required,len=4,numeric"`
-	DeviceToken string `json:"device_token" binding:"required,min=10,max=100"`
+	DeviceToken string `json:"device_token" binding:"required"`
 }
 
 // ResetPin is the struct for resetting the pin
 type ResetPin struct {
-	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
+	PhoneNumber string `json:"phone_number" binding:"required,e164"`
 	Pin         string `json:"pin" binding:"required,len=4,numeric"`
 	CodeOTP     string `json:"code_otp" binding:"required,len=5,numeric"`
 	KeyUID      string `json:"key_uid" binding:"required,uuid"`
@@ -51,22 +52,22 @@ type ResetPin struct {
 
 // UpdatePin is the struct for updating the pin
 type UpdatePin struct {
-	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
+	PhoneNumber string `json:"phone_number" binding:"required"`
 	OldPin      string `json:"old_pin" binding:"required,len=4,numeric"`
 	NewPin      string `json:"new_pin" binding:"required,len=4,numeric"`
 	ConfirmPin  string `json:"confirm_pin" binding:"required,len=4,numeric,eqfield=NewPin"`
 }
 
-// RemoveUserAccount is the struct to remove user
+// RemoveUserAccount is the struct to remove a user
 type RemoveUserAccount struct {
 	PhoneNumber string `json:"phone_number" binding:"required,e164,min=11,max=14"`
 	Pin         string `json:"pin" binding:"required,len=4,numeric"`
 }
 
 type Wallet struct {
-	ID       int64   `json:"id"`
-	Balance  float64 `json:"balance"`
-	Currency string  `json:"currency"`
+	ID       uuid.UUID `json:"id"`
+	Balance  float64   `json:"balance"`
+	Currency string    `json:"currency"`
 }
 
 type AuthResponse struct {
@@ -75,17 +76,17 @@ type AuthResponse struct {
 }
 
 type UserResponse struct {
-	ID          int64  `json:"id"`
-	FirstName   string `json:"first_name"`
-	LastName    string `json:"last_name"`
-	PhoneNumber string `json:"phone_number"`
-	Photo       string `json:"photo"`
-	DeviceToken string `json:"device_token"`
+	ID          uuid.UUID `json:"id"`
+	FirstName   string    `json:"first_name"`
+	LastName    string    `json:"last_name"`
+	PhoneNumber string    `json:"phone_number"`
+	Photo       string    `json:"photo"`
+	DeviceToken string    `json:"device_token"`
 }
 
 type AuthLog struct {
-	ID          int64     `json:"id" db:"id,omitempty"`
-	UserID      int64     `json:"user_id" db:"user_id"`
+	ID          uuid.UUID `json:"id" db:"id,omitempty"`
+	UserID      uuid.UUID `json:"user_id" db:"user_id"`
 	DeviceToken string    `json:"device_token" db:"device_token"`
 	Activity    string    `json:"activity" db:"activity"`
 	PhoneNumber string    `json:"phone_number" db:"phone_number"`
@@ -336,17 +337,24 @@ func (user *User) GetUserByPhone() (*User, error) {
 
 // UpdateDeviceToken update user device token
 func (user *User) UpdateDeviceToken() error {
-	ctx := context.Background()
-	_, err := WithTransaction(
-		DB, func(tx pgx.Tx) (any, error) {
-			_, err := tx.Exec(
-				ctx, "UPDATE users SET device_token = $1 WHERE phone_number = $2 AND is_active = true",
-				user.DeviceToken, user.PhoneNumber,
-			)
-			return nil, err
-		},
-	)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	tx, err := DB.Begin(ctx)
 	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	_, err = tx.Exec(ctx, `UPDATE users SET device_token = $1 WHERE phone_number = $2 AND is_active = true`, user.DeviceToken, user.PhoneNumber)
+
+	if err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
 	return nil
